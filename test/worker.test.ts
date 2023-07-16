@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { getModelForClass, mongoose, prop } from "@typegoose/typegoose";
 import type { ObjectId } from "mongodb";
 import { Worker } from "../src/worker";
-import { Consumer, Job, addJob } from "../src";
+import { Consumer, Job, JobManager, Watcher, addJob } from "../src";
 import { JobInstanceModel } from "../src/entities/JobInstance";
 
 class TestTargetA {
@@ -11,6 +11,12 @@ class TestTargetA {
 
     @prop({ type: () => String })
     name!: string;
+
+    @prop({ type: () => String })
+    triggerBatch!: string;
+
+    @prop({ type: () => String })
+    afterBatch!: string;
 }
 
 const TestModel = getModelForClass(TestTargetA);
@@ -35,8 +41,9 @@ beforeEach(async () => {
 
 describe("worker", () => {
     const worker = new Worker(1);
-
     afterEach(() => worker.stop());
+
+    const manager = new JobManager();
 
     it("can be stopped", () =>
         new Promise<void>((resolve) => {
@@ -143,5 +150,167 @@ describe("worker", () => {
             });
 
             worker.start();
+        }));
+
+    it("can run batch jobs in the correct order", () =>
+        // eslint-disable-next-line no-async-promise-executor
+        new Promise<void>(async (resolve) => {
+            const executedJobs = [] as string[];
+            const expectedJobOrder = [
+                "preBatch",
+                "preBatch",
+                "preBatch",
+                "batch",
+                "postBatch",
+                "postBatch",
+                "postBatch",
+            ];
+            function handleJobExecution(name: string) {
+                executedJobs.push(name);
+
+                if (executedJobs.length === expectedJobOrder.length) {
+                    expect(executedJobs).toEqual(expectedJobOrder);
+                    resolve();
+                }
+            }
+
+            addJob(
+                "preBatch",
+                () => {
+                    handleJobExecution("preBatch");
+                },
+                {
+                    target: () => TestTargetA,
+                    expectedChanges: [{ updates: ["triggerBatch"] }],
+                },
+            );
+
+            addJob(
+                "batch",
+                () => {
+                    handleJobExecution("batch");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onUpdate: ["triggerBatch"] }],
+                    expectedChanges: [{ updates: ["afterBatch"] }],
+                    batch: true,
+                },
+            );
+
+            addJob(
+                "postBatch",
+                () => {
+                    handleJobExecution("postBatch");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onUpdate: ["afterBatch"] }],
+                },
+            );
+
+            const entities = [
+                await TestModel.create({ name: "one" }),
+                await TestModel.create({ name: "two" }),
+                await TestModel.create({ name: "three" }),
+            ];
+
+            await manager.queue(
+                "postBatch",
+                entities.map((e) => e._id),
+            );
+            await manager.queue(
+                "preBatch",
+                entities.map((e) => e._id),
+            );
+            await manager.queue(
+                "batch",
+                entities.map((e) => e._id),
+            );
+
+            worker.start();
+        }));
+});
+
+describe("worker works with watcher", () => {
+    const watcher = new Watcher();
+    afterEach(() => watcher.stop());
+
+    const worker = new Worker(1);
+    afterEach(() => worker.stop());
+
+    it("handles batch", () =>
+        // eslint-disable-next-line no-async-promise-executor
+        new Promise<void>(async (resolve) => {
+            const executedJobs = [] as string[];
+            const expectedJobOrder = [
+                "preBatch",
+                "preBatch",
+                "preBatch",
+                "batch",
+                "postBatch",
+                "postBatch",
+            ];
+            function handleJobExecution(name: string) {
+                executedJobs.push(name);
+                console.log(executedJobs);
+
+                if (executedJobs.length === expectedJobOrder.length) {
+                    expect(executedJobs).toEqual(expectedJobOrder);
+                    resolve();
+                }
+            }
+
+            addJob(
+                "preBatch",
+                async (entityId) => {
+                    await TestModel.findByIdAndUpdate(entityId, {
+                        triggerBatch: "changed",
+                    });
+                    handleJobExecution("preBatch");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onCreate: true }],
+                    expectedChanges: [{ updates: ["triggerBatch"] }],
+                },
+            );
+
+            addJob(
+                "batch",
+                async () => {
+                    const models = await TestModel.find().limit(2).exec();
+                    for (const model of models) {
+                        await model.updateOne({ afterBatch: "updated" }).exec();
+                    }
+                    handleJobExecution("batch");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onUpdate: ["triggerBatch"] }],
+                    expectedChanges: [{ updates: ["afterBatch"] }],
+                    batch: true,
+                },
+            );
+
+            addJob(
+                "postBatch",
+                () => {
+                    handleJobExecution("postBatch");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onUpdate: ["afterBatch"] }],
+                },
+            );
+
+            worker.start();
+            watcher.start();
+
+            const entities = [
+                await TestModel.create({ name: "one" }),
+                await TestModel.create({ name: "two" }),
+                await TestModel.create({ name: "three" }),
+            ];
         }));
 });

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ObjectId } from "mongodb";
-import { Consumer, Job, JobTrigger, addJob } from "../src/index";
+import { Consumer, Job, JobExpectedChange, JobTrigger, addJob } from "../src";
 import { registry } from "../src/registry";
 import { RegisteredJob } from "../src/entities/RegisteredJob";
 import { RegisteredConsumer } from "../src/entities/RegisteredConsumer";
-import { JobExpectedChange } from "../src/decorators/JobExpectedChange";
 
 class TestTargetA {
     _id!: ObjectId;

@@ -6,9 +6,9 @@ import type {
 } from "mongodb";
 import { getClass, mongoose } from "@typegoose/typegoose";
 import { registry } from "./registry";
-import { JobInstanceModel } from "./entities/JobInstance";
 import type { Class, Targetable } from "./common";
 import type { ChangeInfo } from "./job";
+import { JobManager } from "./manager";
 
 // interface ChangeEvent<T> {
 //     operationType: "insert";
@@ -17,6 +17,8 @@ import type { ChangeInfo } from "./job";
 
 export class Watcher {
     registry = registry;
+
+    manager = new JobManager();
 
     stopCallback?: () => void;
     changeStream?: mongoose.mongo.ChangeStream<
@@ -85,10 +87,14 @@ export class Watcher {
 
         const jobs = this.registry.getTriggeredJobs(changeInfo);
 
-        return jobs.map(({ name }) => {
-            console.log(`Creating new job instance ${name} for ${entityId}`);
-            return JobInstanceModel.create({ jobName: name, entityId });
-        });
+        return Promise.all(
+            jobs.map(({ name }) => {
+                console.log(
+                    `Creating new job instance ${name} for ${entityId}`,
+                );
+                return this.manager.queue(name, entityId);
+            }),
+        );
     }
 
     private getModel(

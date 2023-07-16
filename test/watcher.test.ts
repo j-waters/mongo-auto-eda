@@ -53,6 +53,7 @@ const expectedJobCommon = {
     __v: expect.any(Number),
     checkReadyAttempts: 0,
     createdAt: expect.any(Date),
+    updatedAt: expect.any(Date),
     state: "ready",
 };
 
@@ -138,6 +139,7 @@ describe("watcher", () => {
         watcher.start();
 
         await entity.updateOne({ name: "other" });
+        await entity.updateOne({ name: "another" });
 
         while (true) {
             const jobs = await JobInstanceModel.find().lean().exec();
@@ -198,6 +200,42 @@ describe("watcher", () => {
                 {
                     jobName: "onUpdatePath",
                     entityId: entity._id,
+                    ...expectedJobCommon,
+                },
+            ]);
+            break;
+        }
+    });
+
+    it("handles deletion and bulk", async () => {
+        addJob("batchRemove", () => {}, {
+            target: () => TestTarget,
+            batch: true,
+            triggers: [
+                {
+                    onRemove: true,
+                },
+            ],
+        });
+        const entity = await TestModel.create({ name: "foo" });
+        const entity2 = await TestModel.create({ name: "bar" });
+
+        watcher.start();
+
+        await entity.deleteOne();
+        await entity2.deleteOne();
+
+        while (true) {
+            const jobs = await JobInstanceModel.find().lean().exec();
+            if (jobs.length !== 1) {
+                continue;
+            }
+            await sleep();
+
+            expect(jobs).toEqual([
+                {
+                    jobName: "batchRemove",
+                    isBatch: true,
                     ...expectedJobCommon,
                 },
             ]);

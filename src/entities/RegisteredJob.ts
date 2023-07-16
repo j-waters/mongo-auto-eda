@@ -66,6 +66,10 @@ export class RegisteredJob<T extends Targetable = Targetable> {
         }
     }
 
+    get batch() {
+        return this.options.batch;
+    }
+
     addTriggers(...triggers: TriggerOptions[]) {
         for (const trigger of triggers) {
             const target =

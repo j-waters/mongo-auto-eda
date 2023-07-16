@@ -32,7 +32,9 @@ export interface ChangeInfo<T extends Targetable = Targetable>
     target: Target<T>;
 }
 
-export interface BaseJobOptions {}
+export interface BaseJobOptions {
+    batch?: boolean;
+}
 
 export interface JobOptions<T extends Targetable> extends BaseJobOptions {
     target?: Target<T>;

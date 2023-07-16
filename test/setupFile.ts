@@ -1,6 +1,6 @@
 import { afterEach, expect } from "vitest";
 import { resolveTarget } from "../src/common";
-import { registry } from "../src";
+import { registry } from "../src/registry";
 
 afterEach(() => {
     registry.consumers = [];

@@ -1,11 +1,8 @@
-export * from "./registry";
-export * from "./decorators/Consumer";
-export * from "./job";
+export { Consumer } from "./decorators/Consumer";
 export { JobTrigger } from "./decorators/JobTrigger";
+export { JobExpectedChange } from "./decorators/JobExpectedChange";
 export { Job } from "./decorators/Job";
-
-export class JobManager {
-    register() {
-        console.log("register");
-    }
-}
+export { addJob } from "./job";
+export { Watcher } from "./watcher";
+export { Worker } from "./worker";
+export { JobManager } from "./manager";
