@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { getModelForClass, mongoose, prop } from "@typegoose/typegoose";
+import type { ObjectId } from "mongodb";
 import { Worker } from "../src/worker";
 import { Consumer, Job, addJob } from "../src";
 import { JobInstanceModel } from "../src/entities/JobInstance";
 
 class TestTarget {
+    _id!: ObjectId;
+
     @prop({ type: () => String })
     name!: string;
 }
@@ -69,7 +72,7 @@ describe("worker", () => {
 
             let consumerInstance: TestConsumer;
 
-            @Consumer<TestConsumer>({ target: () => TestTarget })
+            @Consumer<TestConsumer, TestTarget>({ target: () => TestTarget })
             class TestConsumer {
                 private prop = "foo";
 

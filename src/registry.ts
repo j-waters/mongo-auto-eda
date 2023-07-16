@@ -1,8 +1,8 @@
-import type { Class } from "./common";
+import type { Class, Targetable } from "./common";
 import { RegisteredConsumer } from "./entities/RegisteredConsumer";
 import { RegisteredJob } from "./entities/RegisteredJob";
-import type { ConsumerOptions } from "./consumer";
-import type { JobOptions } from "./job";
+import type { ConsumerOptions } from "./decorators/Consumer";
+import type { ChangeInfo, JobOptions } from "./job";
 
 // interface RegisteredJob {
 //     name: string;
@@ -23,9 +23,12 @@ export class Registry {
     consumers: RegisteredConsumer[] = [];
     jobs: RegisteredJob[] = [];
 
-    addConsumer(cls: Class, options: ConsumerOptions) {
+    addConsumer<T extends Targetable>(cls: Class, options: ConsumerOptions<T>) {
         const consumer = new RegisteredConsumer(cls, options);
         this.consumers.push(consumer);
+        this.jobs
+            .filter((j) => j.consumerClass === consumer.cls)
+            .forEach((j) => j.registerConsumer(consumer));
         return consumer;
     }
 
@@ -51,43 +54,23 @@ export class Registry {
         return this.jobs.find((j) => j.name === name);
     }
 
-    getConsumers(target: Class): RegisteredConsumer[] {
-        return this.consumers.filter((c) => {
-            return c.options.target() === target;
-        });
+    // Get all the jobs that match the given target and will be triggered by the given change
+    getTriggeredJobs(change: ChangeInfo) {
+        if (!change) {
+            return [];
+        }
+
+        return this.jobs.filter((j) => j.isTriggered(change));
     }
 
-    getJobs(target: Class): RegisteredJob[] {
-        return this.getConsumers(target).flatMap((c) =>
-            this.jobs.filter((j) => j.parentClass === c.cls),
-        );
-    }
+    // Get all the jobs that match the given target and would cause the given change
+    getPrerequisiteJobs<T extends Targetable>(change: ChangeInfo<T>) {
+        if (!change) {
+            return [];
+        }
 
-    getJobsForTarget(target: Class): RegisteredJob[] {
-        return this.jobs.filter((j) => j.target && j.target() === target);
-    }
-
-    getOnCreatedJobs(target: Class): RegisteredJob[] {
-        return this.getJobsForTarget(target);
-    }
-
-    getOnChangedJobs(target: Class, modified: string[]) {
-        const jobs = this.getJobsForTarget(target);
-
-        return jobs.filter((j) => {
-            if (!j.options.onChanged) {
-                return false;
-            }
-            if (j.options.onChanged === true) {
-                return true;
-            }
-            return hasOverlap(j.options.onChanged, modified);
-        });
+        return this.jobs.filter((j) => j.willTrigger(change));
     }
 }
 
 export const registry = new Registry();
-
-function hasOverlap<T>(arr1: T[], arr2: T[]): boolean {
-    return arr1.some((element) => arr2.includes(element));
-}

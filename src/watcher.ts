@@ -1,13 +1,14 @@
 import type {
+    ChangeStreamDeleteDocument,
     ChangeStreamDocument,
     ChangeStreamInsertDocument,
     ChangeStreamUpdateDocument,
 } from "mongodb";
 import { getClass, mongoose } from "@typegoose/typegoose";
 import { registry } from "./registry";
-import type { RegisteredJob } from "./entities/RegisteredJob";
 import { JobInstanceModel } from "./entities/JobInstance";
-import type { Class } from "./common";
+import type { Class, Targetable } from "./common";
+import type { ChangeInfo } from "./job";
 
 // interface ChangeEvent<T> {
 //     operationType: "insert";
@@ -40,8 +41,9 @@ export class Watcher {
     }
 
     async stop() {
-        if (!this.stopCallback || !this.changeStream) 
-return;
+        if (!this.stopCallback || !this.changeStream) {
+            return;
+        }
 
         await this.changeStream.close();
         this.stopCallback();
@@ -63,20 +65,25 @@ return;
 
         const entityId = event.documentKey._id;
 
-        let jobs: RegisteredJob[];
+        const changeInfo: ChangeInfo<Targetable> = {
+            target,
+        };
         switch (event.operationType) {
             case "insert":
-                jobs = registry.getOnCreatedJobs(target);
+                changeInfo.creates = true;
                 break;
             case "update":
-                jobs = registry.getOnChangedJobs(
-                    target,
-                    generateModifiedFields(
-                        event.updateDescription.updatedFields,
-                    ),
+                changeInfo.updates = generateModifiedFields(
+                    event.updateDescription.updatedFields,
                 );
                 break;
+            case "delete":
+                changeInfo.removes = true;
         }
+
+        console.log("change info", changeInfo);
+
+        const jobs = this.registry.getTriggeredJobs(changeInfo);
 
         return jobs.map(({ name }) => {
             console.log(`Creating new job instance ${name} for ${entityId}`);
@@ -87,17 +94,21 @@ return;
     private getModel(
         event: ChangeStreamDocument,
     ): mongoose.Model<unknown> | undefined {
-        if (!checkEvent(event)) 
-return;
+        if (!checkEvent(event)) {
+            return;
+        }
 
         return Object.values(mongoose.models).find(
             (m) => m.collection.collectionName === event.ns.coll,
         );
     }
 
-    private getTarget(event: ChangeStreamDocument): Class | undefined {
-        if (!checkEvent(event)) 
-return;
+    private getTarget(
+        event: ChangeStreamDocument,
+    ): Class<Targetable> | undefined {
+        if (!checkEvent(event)) {
+            return;
+        }
 
         const model = this.getModel(event);
         if (!model) {
@@ -111,16 +122,20 @@ return;
             return;
         }
 
-        return target;
+        return target as Class<Targetable>;
     }
 }
 
 function checkEvent(
     event: ChangeStreamDocument,
-): event is ChangeStreamInsertDocument | ChangeStreamUpdateDocument {
+): event is
+    | ChangeStreamInsertDocument
+    | ChangeStreamUpdateDocument
+    | ChangeStreamDeleteDocument {
     switch (event.operationType) {
         case "insert":
         case "update":
+        case "delete":
             return true;
         default:
             return false;

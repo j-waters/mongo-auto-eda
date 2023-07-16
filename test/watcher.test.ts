@@ -12,6 +12,8 @@ class SubDocument {
 }
 
 class TestTarget {
+    _id!: ObjectId;
+
     @prop({ type: () => String })
     name!: string;
 
@@ -42,6 +44,10 @@ beforeEach(async () => {
     };
 });
 
+function sleep() {
+    return new Promise<void>((resolve) => setTimeout(resolve, 250));
+}
+
 const expectedJobCommon = {
     _id: expect.any(ObjectId),
     __v: expect.any(Number),
@@ -62,7 +68,14 @@ describe("watcher", () => {
         }));
 
     it("queues job on insert", async () => {
-        addJob("testJob", () => {}, { target: () => TestTarget });
+        addJob("testJob", () => {}, {
+            target: () => TestTarget,
+            triggers: [
+                {
+                    onCreate: true,
+                },
+            ],
+        });
 
         watcher.start();
 
@@ -70,8 +83,11 @@ describe("watcher", () => {
 
         while (true) {
             const jobs = await JobInstanceModel.find().lean().exec();
-            if (jobs.length !== 1) 
-continue;
+            if (jobs.length !== 1) {
+                continue;
+            }
+            await sleep();
+
             expect(jobs).toEqual([
                 {
                     jobName: "testJob",
@@ -86,19 +102,35 @@ continue;
     it("queues job on update", async () => {
         addJob("onUpdateAny", () => {}, {
             target: () => TestTarget,
-            onChanged: true,
+            triggers: [
+                {
+                    onUpdate: true,
+                },
+            ],
         });
         addJob("onUpdatePath", () => {}, {
             target: () => TestTarget,
-            onChanged: ["name"],
+            triggers: [
+                {
+                    onUpdate: ["name"],
+                },
+            ],
         });
         addJob("onUpdateWrongPath", () => {}, {
             target: () => TestTarget,
-            onChanged: ["age"],
+            triggers: [
+                {
+                    onUpdate: ["age"],
+                },
+            ],
         });
         addJob("noUpdate", () => {}, {
             target: () => TestTarget,
-            onChanged: false,
+            triggers: [
+                {
+                    onUpdate: false,
+                },
+            ],
         });
 
         const entity = await TestModel.create({ name: "name" });
@@ -109,8 +141,11 @@ continue;
 
         while (true) {
             const jobs = await JobInstanceModel.find().lean().exec();
-            if (jobs.length !== 2) 
-continue;
+            if (jobs.length !== 2) {
+                continue;
+            }
+            await sleep();
+
             expect(jobs).toEqual([
                 {
                     jobName: "onUpdateAny",
@@ -134,7 +169,11 @@ continue;
 
         addJob("onUpdatePath", () => {}, {
             target: () => TestTarget,
-            onChanged: ["subDoc"],
+            triggers: [
+                {
+                    onUpdate: ["subDoc"],
+                },
+            ],
         });
 
         const entity = await TestModel.create({
@@ -150,8 +189,11 @@ continue;
 
         while (true) {
             const jobs = await JobInstanceModel.find().lean().exec();
-            if (jobs.length !== 1) 
-continue;
+            if (jobs.length !== 1) {
+                continue;
+            }
+            await sleep();
+
             expect(jobs).toEqual([
                 {
                     jobName: "onUpdatePath",

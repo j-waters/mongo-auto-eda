@@ -1,97 +1,119 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { Consumer, Job, addJob } from "../src/index";
+import { describe, expect, it } from "vitest";
+import type { ObjectId } from "mongodb";
+import { Consumer, Job, JobTrigger, addJob } from "../src/index";
 import { registry } from "../src/registry";
 import { RegisteredJob } from "../src/entities/RegisteredJob";
 import { RegisteredConsumer } from "../src/entities/RegisteredConsumer";
+import { JobWillChange } from "../src/decorators/JobWillChange";
 
-beforeEach(() => {
-    registry.consumers = [];
-    registry.jobs = [];
-});
+class TestTargetA {
+    _id!: ObjectId;
+}
+class TestTargetB {
+    _id!: ObjectId;
+}
 
-expect.extend({
-    instance(received, expected) {
-        const { isNot, equals, utils } = this;
-        const receivedObj = { ...received };
-        const expectedObj = { ...expected };
-
-        const pass = equals(receivedObj, expectedObj);
-
-        if (!isNot && !pass) {
-            console.log(
-                "Instance inequality:\n",
-                utils.diff(receivedObj, expectedObj),
-            );
-        }
-
-        return {
-            pass,
-            message: () =>
-                `${receivedObj} ${
-                    isNot ? "doesn't equal" : "equals"
-                } ${expectedObj}`,
-            actual: receivedObj,
-            expected: expectedObj,
-        };
-    },
-    returns(received, expected) {
-        const { isNot, equals, utils } = this;
-        const receivedVal = received();
-
-        const pass = equals(receivedVal, expected);
-
-        if (!isNot && !pass) {
-            console.log(
-                "Return value inequality:\n",
-                utils.diff(receivedVal, expected),
-            );
-        }
-
-        return {
-            pass,
-            message: () =>
-                `${receivedVal} ${
-                    isNot ? "doesn't equal" : "equals"
-                } ${expected}`,
-            actual: receivedVal,
-            expected,
-        };
-    },
-});
-
-class TestTarget {}
+class TestTargetC {
+    _id!: ObjectId;
+}
 
 describe("consumer", () => {
     it("registers consumer", () => {
-        @Consumer({ target: () => TestTarget })
+        @Consumer({ target: () => TestTargetA })
         class Test {}
 
         expect(registry.consumers).toEqual([
             expect.instance(
-                new RegisteredConsumer(Test, {
-                    target: expect.returns(TestTarget),
+                new RegisteredConsumer(expect.instance(Test), {
+                    target: expect.target(TestTargetA),
                 }),
             ),
         ]);
     });
 
     it("registers job", () => {
-        @Consumer({ target: () => TestTarget })
+        @Consumer<TestConsumer, TestTargetA>({ target: () => TestTargetA })
         class TestConsumer {
-            @Job({ onChanged: ["prop"] })
+            @Job()
+            @JobTrigger(["own1"])
+            @JobTrigger({ onRemove: true })
+            @JobTrigger(TestTargetB)
+            @JobTrigger(TestTargetC, { onRemove: true })
+            @JobWillChange(["own2"])
+            @JobWillChange({ removes: true })
+            @JobWillChange(TestTargetB)
+            @JobWillChange(TestTargetC, { removes: true })
             testJob() {}
         }
 
+        const instance = new TestConsumer();
+
         const expectedJob = new RegisteredJob(
-            new TestConsumer().testJob,
-            { onChanged: ["prop"] },
+            instance.testJob,
+            {},
             "testJob",
-            TestConsumer,
+            expect.instance(TestConsumer),
         );
 
-        expect(registry.jobs).toEqual([expect.instance(expectedJob)]);
+        expectedJob.consumer = new RegisteredConsumer(
+            expect.instance(TestConsumer),
+            {
+                target: TestTargetA,
+            },
+        );
+        expectedJob.consumer.instance = new WeakRef(instance);
 
-        expect(expectedJob.name).toEqual("TestConsumer<TestTarget>.testJob");
+        expectedJob.addTriggers(
+            {
+                target: TestTargetC,
+                onRemove: true,
+            },
+            {
+                target: TestTargetB,
+                onCreate: true,
+                onUpdate: true,
+                onRemove: true,
+            },
+            {
+                target: TestTargetA,
+                onCreate: true,
+                onUpdate: ["own1"],
+                onRemove: true,
+            },
+        );
+
+        expect(registry.jobs[0].triggerMap).toEqual(expectedJob.triggerMap);
+
+        expectedJob.addWillChange(
+            {
+                target: TestTargetC,
+                removes: true,
+            },
+            {
+                target: TestTargetB,
+                creates: true,
+                updates: true,
+            },
+            {
+                removes: true,
+                updates: ["own2"],
+            },
+        );
+
+        expect(registry.jobs[0].willChangeMap).toEqual(
+            expectedJob.willChangeMap,
+        );
+
+        expectedJob.consumer!.options.target = expect.target(
+            expectedJob.consumer!.options.target,
+        );
+        expectedJob.consumer = expect.instance(expectedJob.consumer);
+
+        expect(registry.jobs).toEqual([expect.instance(expectedJob)]);
+        expect(registry.jobs[0].target).toEqual(expect.target(TestTargetA));
+        expect(registry.jobs[0].name).toEqual(
+            "TestConsumer<TestTargetA>.testJob",
+        );
     });
 });
 
@@ -101,8 +123,8 @@ describe("standalone function", () => {
 
         const anon = () => {};
 
-        addJob(Test, { onChanged: ["prop"], target: () => TestTarget });
-        addJob("anonJob", anon, { target: () => TestTarget });
+        addJob(Test, { target: () => TestTargetA });
+        addJob("anonJob", anon, { target: () => TestTargetA });
 
         expect(() => addJob(() => {}, {})).toThrowError(/has no name/);
         expect(() => addJob("anonJob", anon, {})).toThrowError(
@@ -112,14 +134,13 @@ describe("standalone function", () => {
         const expectedJobs = [
             expect.instance(
                 new RegisteredJob(Test, {
-                    onChanged: ["prop"],
-                    target: expect.returns(TestTarget),
+                    target: expect.target(TestTargetA),
                 }),
             ),
             expect.instance(
                 new RegisteredJob(
                     anon,
-                    { target: expect.returns(TestTarget) },
+                    { target: expect.target(TestTargetA) },
                     "anonJob",
                 ),
             ),
@@ -159,9 +180,9 @@ const expectedJobs = [
             ),
         ];
 
-expect(registry.getJobsForTarget(TestTarget)).toEqual(expectedJobs);
-expect(registry.getOnCreatedJobs(TestTarget)).toEqual(expectedJobs);
-expect(registry.getOnChangedJobs(TestTarget, ["prop", "foo"])).toEqual([
+expect(registry.getJobsForTarget(TestTargetA)).toEqual(expectedJobs);
+expect(registry.getOnCreatedJobs(TestTargetA)).toEqual(expectedJobs);
+expect(registry.getOnChangedJobs(TestTargetA, ["prop", "foo"])).toEqual([
     expectedJobs[1],
     expectedJobs[2],
 ]);
