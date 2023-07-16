@@ -1,26 +1,29 @@
 import type { Target, Targetable } from "../common";
-import type { ChangeInfo, TargetProps, WillChangeOptions } from "../job";
+import type { ChangeInfo, ExpectedChangeOptions, TargetProps } from "../job";
 
-export function JobWillChange<T extends Targetable>(
+export function JobExpectedChange<T extends Targetable>(
     props: TargetProps<T>,
 ): MethodDecorator;
-export function JobWillChange<T extends Targetable>(
-    options: WillChangeOptions<T>,
+export function JobExpectedChange<T extends Targetable>(
+    options: ExpectedChangeOptions<T>,
 ): MethodDecorator;
-export function JobWillChange<T extends Targetable>(
+export function JobExpectedChange<T extends Targetable>(
     target: Target<T>,
-    options?: WillChangeOptions<T>,
+    options?: ExpectedChangeOptions<T>,
 ): MethodDecorator;
-export function JobWillChange<T extends Targetable>(
-    targetOrOptionsOrProps: Target<T> | WillChangeOptions<T> | TargetProps<T>,
-    options?: WillChangeOptions<T>,
+export function JobExpectedChange<T extends Targetable>(
+    targetOrOptionsOrProps:
+        | Target<T>
+        | ExpectedChangeOptions<T>
+        | TargetProps<T>,
+    options?: ExpectedChangeOptions<T>,
 ): MethodDecorator {
     return function (
         cls: any,
         propertyKey: string | symbol,
         _descriptor: PropertyDescriptor,
     ) {
-        const existingWillChanges =
+        const existingExpectedChanges =
             (Reflect.getMetadata(
                 "willChange",
                 cls,
@@ -46,7 +49,7 @@ export function JobWillChange<T extends Targetable>(
 
         Reflect.defineMetadata(
             "willChange",
-            [...existingWillChanges, { target, ...options }],
+            [...existingExpectedChanges, { target, ...options }],
             cls,
             propertyKey,
         );

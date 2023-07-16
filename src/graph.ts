@@ -1,3 +1,4 @@
+import { analyzeGraph } from "graph-cycles";
 import type { RegisteredJob } from "./entities/RegisteredJob";
 
 export interface JobNode {
@@ -38,5 +39,16 @@ export class JobGraph {
             }
             this.jobNodes.set(job.name, node);
         }
+
+        const res = analyzeGraph(
+            [...this.jobNodes.values()].map((n) => [n.job.name, n.willTrigger]),
+        );
+        if (res.cycles.length > 0) {
+            console.warn("Job cycles detected:", res.cycles);
+        }
+    }
+
+    get(job: RegisteredJob) {
+        return this.jobNodes.get(job.name);
     }
 }

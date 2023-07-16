@@ -20,7 +20,7 @@ export interface Trigger<T extends Targetable = Targetable>
     target: Target<T>;
 }
 
-export interface WillChangeOptions<T extends Targetable = Targetable> {
+export interface ExpectedChangeOptions<T extends Targetable = Targetable> {
     updates?: TargetProps<T> | boolean;
     creates?: boolean;
     removes?: boolean;
@@ -28,20 +28,20 @@ export interface WillChangeOptions<T extends Targetable = Targetable> {
 }
 
 export interface ChangeInfo<T extends Targetable = Targetable>
-    extends WillChangeOptions<T> {
+    extends ExpectedChangeOptions<T> {
     target: Target<T>;
 }
 
 export interface BaseJobOptions {}
 
-export interface JobOptions<T extends Targetable> extends BaseJobOptions<T> {
+export interface JobOptions<T extends Targetable> extends BaseJobOptions {
     target?: Target<T>;
 }
 
 export interface StandaloneJobOptions<T extends Targetable>
     extends JobOptions<T> {
     triggers?: TriggerOptions[];
-    willChange?: WillChangeOptions[];
+    expectedChanges?: ExpectedChangeOptions[];
 }
 
 export function addJob<T extends Targetable>(
@@ -70,11 +70,11 @@ export function addJob<T extends Targetable>(
         standaloneOptions = b as StandaloneJobOptions<T>;
     }
 
-    const { triggers, willChange, ...options } = standaloneOptions;
+    const { triggers, expectedChanges, ...options } = standaloneOptions;
 
     const job = registry.addJob(func, options, name);
     job.addTriggers(...(triggers ?? []));
-    job.addWillChange(...(willChange ?? []));
+    job.addExpectedChange(...(expectedChanges ?? []));
 
     return job;
 }

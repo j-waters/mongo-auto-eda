@@ -2,12 +2,9 @@ import type { Targetable } from "../common";
 import { registry } from "../registry";
 import type { BaseJobOptions, ChangeInfo, Trigger } from "../job";
 
-export interface JobDecoratorOptions<T extends Targetable>
-    extends BaseJobOptions<T> {}
+export interface JobDecoratorOptions extends BaseJobOptions {}
 
-export function Job<T extends Targetable>(
-    decoratorOptions?: JobDecoratorOptions<T>,
-): MethodDecorator {
+export function Job(decoratorOptions?: JobDecoratorOptions): MethodDecorator {
     console.log("register job");
     return function (
         target: any,
@@ -35,6 +32,6 @@ export function Job<T extends Targetable>(
             target.constructor,
         );
         job.addTriggers(...triggers);
-        job.addWillChange(...willChange);
+        job.addExpectedChange(...willChange);
     };
 }

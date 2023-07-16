@@ -60,7 +60,7 @@ describe("job", () => {
             target: TestTargetA,
         });
 
-        job.addWillChange(
+        job.addExpectedChange(
             { updates: ["own1"] },
             { updates: ["own2"] },
             { target: () => TestTargetA, updates: ["own3"] },
@@ -97,7 +97,7 @@ describe("job", () => {
             },
             "jobA",
         );
-        jobA.addWillChange({
+        jobA.addExpectedChange({
             target: TestTargetB,
             creates: true,
         });

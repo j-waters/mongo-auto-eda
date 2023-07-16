@@ -4,7 +4,7 @@ import { Consumer, Job, JobTrigger, addJob } from "../src/index";
 import { registry } from "../src/registry";
 import { RegisteredJob } from "../src/entities/RegisteredJob";
 import { RegisteredConsumer } from "../src/entities/RegisteredConsumer";
-import { JobWillChange } from "../src/decorators/JobWillChange";
+import { JobExpectedChange } from "../src/decorators/JobExpectedChange";
 
 class TestTargetA {
     _id!: ObjectId;
@@ -39,10 +39,10 @@ describe("consumer", () => {
             @JobTrigger({ onRemove: true })
             @JobTrigger(TestTargetB)
             @JobTrigger(TestTargetC, { onRemove: true })
-            @JobWillChange(["own2"])
-            @JobWillChange({ removes: true })
-            @JobWillChange(TestTargetB)
-            @JobWillChange(TestTargetC, { removes: true })
+            @JobExpectedChange(["own2"])
+            @JobExpectedChange({ removes: true })
+            @JobExpectedChange(TestTargetB)
+            @JobExpectedChange(TestTargetC, { removes: true })
             testJob() {}
         }
 
@@ -84,7 +84,7 @@ describe("consumer", () => {
 
         expect(registry.jobs[0].triggerMap).toEqual(expectedJob.triggerMap);
 
-        expectedJob.addWillChange(
+        expectedJob.addExpectedChange(
             {
                 target: TestTargetC,
                 removes: true,

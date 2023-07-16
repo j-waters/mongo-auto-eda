@@ -6,14 +6,14 @@ import { Worker } from "../src/worker";
 import { Consumer, Job, addJob } from "../src";
 import { JobInstanceModel } from "../src/entities/JobInstance";
 
-class TestTarget {
+class TestTargetA {
     _id!: ObjectId;
 
     @prop({ type: () => String })
     name!: string;
 }
 
-const TestModel = getModelForClass(TestTarget);
+const TestModel = getModelForClass(TestTargetA);
 
 beforeEach(async () => {
     const replSet = new MongoMemoryReplSet({
@@ -34,7 +34,7 @@ beforeEach(async () => {
 });
 
 describe("worker", () => {
-    const worker = new Worker();
+    const worker = new Worker(1);
 
     afterEach(() => worker.stop());
 
@@ -54,7 +54,7 @@ describe("worker", () => {
                 () => {
                     resolve();
                 },
-                { target: () => TestTarget },
+                { target: () => TestTargetA },
             );
 
             const entity = await TestModel.create({ name: "name" });
@@ -72,7 +72,7 @@ describe("worker", () => {
 
             let consumerInstance: TestConsumer;
 
-            @Consumer<TestConsumer, TestTarget>({ target: () => TestTarget })
+            @Consumer<TestConsumer, TestTargetA>({ target: () => TestTargetA })
             class TestConsumer {
                 private prop = "foo";
 
@@ -89,8 +89,59 @@ describe("worker", () => {
             const entity = await TestModel.create({ name: "name" });
 
             await JobInstanceModel.create({
-                jobName: "TestConsumer<TestTarget>.testJob",
+                jobName: "TestConsumer<TestTargetA>.testJob",
                 entityId: entity._id,
             });
+        }));
+
+    it("can run jobs in the correct order", () =>
+        // eslint-disable-next-line no-async-promise-executor
+        new Promise<void>(async (resolve) => {
+            const executedJobs = [] as string[];
+            const expectedJobOrder = ["jobB", "jobA"];
+            function handleJobExecution(name: string) {
+                executedJobs.push(name);
+
+                if (executedJobs.length === expectedJobOrder.length) {
+                    expect(executedJobs).toEqual(expectedJobOrder);
+                    resolve();
+                }
+            }
+
+            addJob(
+                "jobA",
+                () => {
+                    handleJobExecution("jobA");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onUpdate: ["foo"] }],
+                },
+            );
+
+            addJob(
+                "jobB",
+                () => {
+                    handleJobExecution("jobB");
+                },
+                {
+                    target: () => TestTargetA,
+                    expectedChanges: [{ updates: ["foo"] }],
+                },
+            );
+
+            const entity = await TestModel.create({ name: "name" });
+
+            await JobInstanceModel.create({
+                jobName: "jobA",
+                entityId: entity._id,
+            });
+
+            await JobInstanceModel.create({
+                jobName: "jobB",
+                entityId: entity._id,
+            });
+
+            worker.start();
         }));
 });

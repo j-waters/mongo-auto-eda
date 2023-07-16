@@ -29,6 +29,9 @@ export class JobInstance {
 
     @prop({ type: () => Number, default: 0 })
     checkReadyAttempts!: number;
+
+    @prop({ type: () => Boolean })
+    isBatch?: boolean;
 }
 
 export const JobInstanceModel = getModelForClass(JobInstance);

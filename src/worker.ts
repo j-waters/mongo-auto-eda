@@ -1,4 +1,5 @@
 import type { ObjectId } from "mongodb";
+import type { UpdateQuery } from "mongoose";
 import type { JobInstance, JobState } from "./entities/JobInstance";
 import { JobInstanceModel } from "./entities/JobInstance";
 import type { RegisteredJob } from "./entities/RegisteredJob";
@@ -106,7 +107,9 @@ export class Worker {
         }
 
         try {
+            console.info(`Running job ${jobStr(job)}`);
             await func(job.entityId);
+            console.info(`Ran job ${jobStr(job)}`);
         } catch (err) {
             console.error(
                 `Error running job ${job.jobName} with entityId ${job.entityId}; `,
@@ -120,46 +123,70 @@ export class Worker {
     }
 
     private async isJobReady(
-        _definition: RegisteredJob,
-        _job: LeanJobInstance,
+        definition: RegisteredJob,
+        job: LeanJobInstance,
     ): Promise<boolean> {
+        const node = registry.graph.get(definition)!;
+        if (!node) {
+            throw new Error(`No node for job ${definition.name}`);
+        }
+
+        if (
+            await JobInstanceModel.exists({
+                state: { $in: ["ready", "reserved"] },
+                jobName: { $in: node.triggeredBy },
+                $or: [{ isBatch: true }, { entityId: job.entityId }],
+            })
+        ) {
+            return false;
+        }
+
         return true;
     }
 
     private async updateState(
         job: LeanJobInstance,
         state: JobState,
+        extras?: UpdateQuery<JobInstance>,
     ): Promise<boolean> {
         const res = await JobInstanceModel.findOneAndUpdate(
             { _id: job._id, state: job.state },
-            { state },
-        ).exec();
-
-        return !!res;
-    }
-
-    private async reserveJob(job: LeanJobInstance): Promise<boolean> {
-        const res = await JobInstanceModel.findOneAndUpdate(
-            { _id: job._id, state: job.state },
-            { state: "reserved", reservedAt: new Date() },
+            { state, ...extras },
         ).exec();
 
         if (res) {
-            console.info(`Reserved job ${job.jobName}<${job.entityId}>`);
+            console.info(
+                `Updated job ${jobStr(job)} state from ${
+                    job.state
+                } to ${state}`,
+            );
+            job.state = state;
+        } else {
+            console.warn(
+                `Couldn't update job ${jobStr(job)} state from ${
+                    job.state
+                } to ${state} - out of sync with database`,
+            );
         }
 
         return !!res;
     }
 
+    private async reserveJob(job: LeanJobInstance): Promise<boolean> {
+        return this.updateState(job, "reserved", { reservedAt: new Date() });
+    }
+
     private buryJob(job: LeanJobInstance): Promise<boolean> {
-        console.warn(`Buried job ${job.jobName}<${job.entityId}>`);
         return this.updateState(job, "buried");
     }
 
-    private jobNotReady(job: LeanJobInstance) {
-        return JobInstanceModel.findOneAndUpdate(
-            { _id: job._id, state: job.state },
-            { state: "ready", $inc: { checkReadyAttempts: 1 } },
-        ).exec();
+    private async jobNotReady(job: LeanJobInstance) {
+        return this.updateState(job, "ready", {
+            $inc: { checkReadyAttempts: 1 },
+        });
     }
+}
+
+function jobStr(job: LeanJobInstance) {
+    return `${job.jobName}<${job.entityId}>`;
 }

@@ -3,6 +3,7 @@ import { RegisteredConsumer } from "./entities/RegisteredConsumer";
 import { RegisteredJob } from "./entities/RegisteredJob";
 import type { ConsumerOptions } from "./decorators/Consumer";
 import type { ChangeInfo, JobOptions } from "./job";
+import { JobGraph } from "./graph";
 
 // interface RegisteredJob {
 //     name: string;
@@ -54,7 +55,7 @@ export class Registry {
         return this.jobs.find((j) => j.name === name);
     }
 
-    // Get all the jobs that match the given target and will be triggered by the given change
+    // Get all the jobs that will be triggered by the given change
     getTriggeredJobs(change: ChangeInfo) {
         if (!change) {
             return [];
@@ -63,13 +64,8 @@ export class Registry {
         return this.jobs.filter((j) => j.isTriggered(change));
     }
 
-    // Get all the jobs that match the given target and would cause the given change
-    getPrerequisiteJobs<T extends Targetable>(change: ChangeInfo<T>) {
-        if (!change) {
-            return [];
-        }
-
-        return this.jobs.filter((j) => j.willTrigger(change));
+    get graph() {
+        return new JobGraph(this.jobs);
     }
 }
 

@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@typegoose/typegoose": "^11.3.0",
+    "graph-cycles": "^3.0.0",
     "mongodb-memory-server": "^8.13.0",
     "mongoose": "^7.3.4"
   },

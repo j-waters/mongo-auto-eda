@@ -2,10 +2,10 @@ import type { Class, JobFunction, Targetable } from "../common";
 import { CurrentJobTargetPlaceholder, resolveTarget } from "../common";
 import type {
     ChangeInfo,
+    ExpectedChangeOptions,
     JobOptions,
     Trigger,
     TriggerOptions,
-    WillChangeOptions,
 } from "../job";
 import type { RegisteredConsumer } from "./RegisteredConsumer";
 
@@ -94,7 +94,7 @@ export class RegisteredJob<T extends Targetable = Targetable> {
         }
     }
 
-    addWillChange(...willChanges: WillChangeOptions[]) {
+    addExpectedChange(...willChanges: ExpectedChangeOptions[]) {
         for (const change of willChanges) {
             const target =
                 resolveTarget(change.target) ??
