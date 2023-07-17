@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { getModelForClass, mongoose, prop } from "@typegoose/typegoose";
-import type { ObjectId } from "mongodb";
-import { Worker } from "../src/worker";
+import { ObjectId } from "mongodb";
+import { Worker, currentJobStore } from "../src/worker";
 import { Consumer, Job, JobManager, Watcher, addJob } from "../src";
 import { JobInstanceModel } from "../src/entities/JobInstance";
 
@@ -99,6 +99,47 @@ describe("worker", () => {
                 jobName: "TestConsumer<TestTargetA>.testJob",
                 entityId: entity._id,
             });
+        }));
+
+    it("can get job context from store", () =>
+        // eslint-disable-next-line no-async-promise-executor
+        new Promise<void>(async (resolve) => {
+            const jobs = [
+                await JobInstanceModel.create({
+                    jobName: "job",
+                    entityId: new ObjectId(),
+                }),
+                await JobInstanceModel.create({
+                    jobName: "job",
+                    entityId: new ObjectId(),
+                }),
+            ];
+
+            const gotJobs = [] as any;
+
+            addJob(
+                "job",
+                () => {
+                    const gotJob = currentJobStore.getStore();
+                    gotJobs.push({ ...gotJob });
+                    if (gotJobs.length === jobs.length) {
+                        expect(gotJobs).toEqual(
+                            jobs.map((job) => ({
+                                _id: job._id,
+                                jobName: job.jobName,
+                                entityId: job.entityId,
+                                state: "reserved",
+                            })),
+                        );
+                        resolve();
+                    }
+                },
+                {
+                    target: () => TestTargetA,
+                },
+            );
+
+            worker.start();
         }));
 
     it("can run jobs in the correct order", () =>

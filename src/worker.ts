@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { ObjectId } from "mongodb";
 import type { UpdateQuery } from "mongoose";
 import type { JobInstance, JobState } from "./entities/JobInstance";
@@ -8,6 +9,8 @@ import { registry } from "./registry";
 type LeanJobInstance = Pick<JobInstance, "jobName" | "entityId" | "state"> & {
     _id: ObjectId;
 };
+
+export const currentJobStore = new AsyncLocalStorage<LeanJobInstance>();
 
 export class Worker {
     private stopped = true;
@@ -106,20 +109,22 @@ export class Worker {
             }
         }
 
-        try {
-            console.info(`Running job ${jobStr(job)}`);
-            await func(job.entityId);
-            console.info(`Ran job ${jobStr(job)}`);
-        } catch (err) {
-            console.error(
-                `Error running job ${job.jobName} with entityId ${job.entityId}; `,
-                err,
-            );
-            await this.buryJob(job);
-            return;
-        }
+        await currentJobStore.run(job, async () => {
+            try {
+                console.info(`Running job ${jobStr(job)}`);
+                await func(job.entityId);
+                console.info(`Ran job ${jobStr(job)}`);
+            } catch (err) {
+                console.error(
+                    `Error running job ${job.jobName} with entityId ${job.entityId}; `,
+                    err,
+                );
+                await this.buryJob(job);
+                return;
+            }
 
-        await this.updateState(job, "complete");
+            await this.updateState(job, "complete");
+        });
     }
 
     private async isJobReady(

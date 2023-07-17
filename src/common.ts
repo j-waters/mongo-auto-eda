@@ -15,7 +15,7 @@ export type Target<T extends Targetable = Targetable> =
     | Class<T>
     | (() => Class<T>);
 
-export type JobFunction = (entityId: ObjectId) => void;
+export type JobFunction = (entityId: ObjectId) => void | PromiseLike<void>;
 
 // function isConstructor(obj: any): obj is AnyParamConstructor<any> {
 //     return (
