@@ -3,8 +3,10 @@ import type { RegisteredJob } from "./entities/RegisteredJob";
 
 export interface JobNode {
     job: RegisteredJob;
-    willTrigger: string[];
-    triggeredBy: string[];
+    willTriggerSpecific: string[];
+    willTriggerAny: string[];
+    triggeredBySpecific: string[];
+    triggeredByAny: string[];
 }
 
 export class JobGraph {
@@ -14,8 +16,10 @@ export class JobGraph {
         for (const job of jobs) {
             const node: JobNode = {
                 job,
-                willTrigger: [],
-                triggeredBy: [],
+                willTriggerSpecific: [],
+                willTriggerAny: [],
+                triggeredBySpecific: [],
+                triggeredByAny: [],
             };
             for (const otherJob of jobs) {
                 if (job === otherJob) {
@@ -31,20 +35,44 @@ export class JobGraph {
                 }
 
                 if (willTrigger) {
-                    node.willTrigger.push(otherJob.name);
+                    if (job.target === otherJob.target) {
+                        node.willTriggerSpecific.push(otherJob.name);
+                    } else {
+                        node.willTriggerAny.push(otherJob.name);
+                    }
                 }
                 if (triggeredBy) {
-                    node.triggeredBy.push(otherJob.name);
+                    if (job.target === otherJob.target) {
+                        node.triggeredBySpecific.push(otherJob.name);
+                    } else {
+                        node.triggeredByAny.push(otherJob.name);
+                    }
                 }
             }
             this.jobNodes.set(job.name, node);
         }
 
-        const res = analyzeGraph(
-            [...this.jobNodes.values()].map((n) => [n.job.name, n.willTrigger]),
+        let res = analyzeGraph(
+            [...this.jobNodes.values()].map((n) => [
+                n.job.name,
+                n.willTriggerAny,
+            ]),
         );
         if (res.cycles.length > 0) {
-            console.warn("Job cycles detected:", res.cycles);
+            console.warn("Job cycles detected (willTriggerAny):", res.cycles);
+        }
+
+        res = analyzeGraph(
+            [...this.jobNodes.values()].map((n) => [
+                n.job.name,
+                n.willTriggerSpecific,
+            ]),
+        );
+        if (res.cycles.length > 0) {
+            console.warn(
+                "Job cycles detected (willTriggerSpecific):",
+                res.cycles,
+            );
         }
     }
 

@@ -19,6 +19,10 @@ class TestTargetA {
     afterBatch!: string;
 }
 
+class TestTargetB {
+    _id!: ObjectId;
+}
+
 const TestModel = getModelForClass(TestTargetA);
 
 beforeEach(async () => {
@@ -280,6 +284,8 @@ describe("worker works with watcher", () => {
     const worker = new Worker(1);
     afterEach(() => worker.stop());
 
+    const manager = new JobManager();
+
     it("handles batch", () =>
         // eslint-disable-next-line no-async-promise-executor
         new Promise<void>(async (resolve) => {
@@ -353,5 +359,73 @@ describe("worker works with watcher", () => {
                 await TestModel.create({ name: "two" }),
                 await TestModel.create({ name: "three" }),
             ];
+        }));
+
+    it("handles specific and any", () =>
+        // eslint-disable-next-line no-async-promise-executor
+        new Promise<void>(async (resolve) => {
+            let entity: TestTargetA | undefined;
+
+            const executedJobs = [] as string[];
+            const expectedJobOrder = ["initialJob", "job1", "job2"];
+            async function handleJobExecution(name: string) {
+                executedJobs.push(name);
+                console.log(executedJobs);
+
+                if (executedJobs.length === expectedJobOrder.length) {
+                    expect(executedJobs).toEqual(expectedJobOrder);
+                    expect(
+                        (await TestModel.findById(entity?._id).exec())?.name,
+                    ).toEqual("changed");
+                    resolve();
+                }
+            }
+
+            addJob(
+                "job1",
+                async (entityId) => {
+                    expect(entityId).toEqual(entity?._id);
+                    await TestModel.findByIdAndUpdate(entityId, {
+                        name: "changed",
+                    });
+                    await handleJobExecution("job1");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onCreate: true }],
+                    expectedChanges: [{ updates: ["name"] }],
+                },
+            );
+
+            addJob(
+                "initialJob",
+                async () => {
+                    entity = await TestModel.create({ name: "initial" });
+                    await handleJobExecution("initialJob");
+                },
+                {
+                    target: () => TestTargetB,
+                    expectedChanges: [
+                        { target: TestTargetA, updates: ["name"] },
+                    ],
+                },
+            );
+
+            addJob(
+                "job2",
+                async (entityId) => {
+                    expect(entityId).toEqual(entity?._id);
+                    await handleJobExecution("job2");
+                },
+                {
+                    target: () => TestTargetA,
+                    triggers: [{ onUpdate: ["name"], onCreate: true }],
+                },
+            );
+
+            worker.start();
+            watcher.start();
+
+            manager.queue("initialJob", new ObjectId());
         }));
 });

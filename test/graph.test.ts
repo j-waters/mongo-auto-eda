@@ -20,6 +20,13 @@ class TestTargetD {
     _id!: ObjectId;
 }
 
+const emptyExpectation = {
+    willTriggerSpecific: [],
+    willTriggerAny: [],
+    triggeredBySpecific: [],
+    triggeredByAny: [],
+};
+
 describe("job", () => {
     it("can return a map of triggers", () => {
         const job = new RegisteredJob<TestTargetA>(() => {}, {
@@ -89,42 +96,104 @@ describe("job", () => {
         expect(job.willChangeMap).toEqual(expectedMap);
     });
 
-    it("can generate a simple graph", () => {
-        const jobA = new RegisteredJob<TestTargetA>(
+    it("can generate a graph with one type", () => {
+        const job1 = new RegisteredJob<TestTargetA>(
             () => {},
             {
                 target: TestTargetA,
             },
-            "jobA",
+            "job1",
         );
-        jobA.addExpectedChange({
-            target: TestTargetB,
-            creates: true,
+        job1.addExpectedChange({
+            updates: true,
         });
 
-        const jobB = new RegisteredJob<TestTargetA>(
+        const job2 = new RegisteredJob<TestTargetA>(
+            () => {},
+            {
+                target: TestTargetA,
+            },
+            "job2",
+        );
+        job2.addTriggers({
+            onUpdate: true,
+        });
+
+        const graph = new JobGraph([job1, job2]);
+
+        const expected = new Map<string, JobNode>();
+        expected.set("job1", {
+            job: job1,
+            ...emptyExpectation,
+            willTriggerSpecific: ["job2"],
+        });
+        expected.set("job2", {
+            job: job2,
+            ...emptyExpectation,
+            triggeredBySpecific: ["job1"],
+        });
+
+        expect(graph.jobNodes).toEqual(expected);
+    });
+
+    it("can generate a graph with multiple types", () => {
+        const job1 = new RegisteredJob<TestTargetA>(
+            () => {},
+            {
+                target: TestTargetA,
+            },
+            "job1",
+        );
+        job1.addExpectedChange({
+            updates: ["p1", "p2"],
+        });
+        job1.addTriggers({
+            onCreate: true,
+        });
+
+        const job2 = new RegisteredJob<TestTargetB>(
             () => {},
             {
                 target: TestTargetB,
             },
-            "jobB",
+            "job2",
         );
-        jobB.addTriggers({
+        job2.addExpectedChange({
+            target: TestTargetA,
+            creates: true,
+        });
+
+        const job3 = new RegisteredJob<TestTargetA>(
+            () => {},
+            {
+                target: TestTargetA,
+            },
+            "job3",
+        );
+        job3.addTriggers({
+            onUpdate: ["p2", "p3"],
             onCreate: true,
         });
 
-        const graph = new JobGraph([jobA, jobB]);
+        const graph = new JobGraph([job1, job2, job3]);
 
         const expected = new Map<string, JobNode>();
-        expected.set("jobA", {
-            job: jobA,
-            willTrigger: ["jobB"],
-            triggeredBy: [],
+        expected.set("job1", {
+            job: job1,
+            ...emptyExpectation,
+            willTriggerSpecific: ["job3"],
+            triggeredByAny: ["job2"],
         });
-        expected.set("jobB", {
-            job: jobB,
-            willTrigger: [],
-            triggeredBy: ["jobA"],
+        expected.set("job2", {
+            job: job2,
+            ...emptyExpectation,
+            willTriggerAny: ["job1", "job3"],
+        });
+        expected.set("job3", {
+            job: job3,
+            ...emptyExpectation,
+            triggeredBySpecific: ["job1"],
+            triggeredByAny: ["job2"],
         });
 
         expect(graph.jobNodes).toEqual(expected);

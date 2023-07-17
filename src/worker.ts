@@ -137,11 +137,22 @@ export class Worker {
         }
 
         if (
-            await JobInstanceModel.exists({
+            node.triggeredByAny.length > 0 &&
+            (await JobInstanceModel.exists({
                 state: { $in: ["ready", "reserved"] },
-                jobName: { $in: node.triggeredBy },
+                jobName: { $in: node.triggeredByAny },
+            }))
+        ) {
+            return false;
+        }
+
+        if (
+            node.triggeredBySpecific.length > 0 &&
+            (await JobInstanceModel.exists({
+                state: { $in: ["ready", "reserved"] },
+                jobName: { $in: node.triggeredBySpecific },
                 $or: [{ isBatch: true }, { entityId: job.entityId }],
-            })
+            }))
         ) {
             return false;
         }
