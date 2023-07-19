@@ -1,3 +1,4 @@
+import type { ChangeStreamDocument, ObjectId } from "mongodb";
 import { registry } from "./registry";
 import type { JobFunction, Target, Targetable } from "./common";
 import type { RegisteredJob } from "./entities/RegisteredJob";
@@ -8,11 +9,17 @@ export type TargetProps<T extends Targetable = Targetable> = (
     | string
 )[];
 
+export type TransformerFunc = (
+    entityId?: ObjectId,
+    event?: ChangeStreamDocument,
+) => ObjectId | ObjectId[] | undefined | void;
+
 export interface TriggerOptions<T extends Targetable = Targetable> {
     onUpdate?: TargetProps<T> | boolean;
     onCreate?: boolean;
     onRemove?: boolean;
     target?: Target<T>;
+    transformer?: TransformerFunc;
 }
 
 export interface Trigger<T extends Targetable = Targetable>

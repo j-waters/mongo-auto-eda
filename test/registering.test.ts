@@ -31,13 +31,13 @@ describe("consumer", () => {
     });
 
     it("registers job", () => {
-        @Consumer<TestConsumer, TestTargetA>({ target: () => TestTargetA })
+        @Consumer({ target: () => TestTargetA })
         class TestConsumer {
             @Job()
             @JobTrigger(["own1"])
             @JobTrigger({ onRemove: true })
-            @JobTrigger(TestTargetB)
-            @JobTrigger(TestTargetC, { onRemove: true })
+            @JobTrigger(TestTargetB, () => {})
+            @JobTrigger(TestTargetC, { onRemove: true, transformer() {} })
             @JobExpectedChange(["own2"])
             @JobExpectedChange({ removes: true })
             @JobExpectedChange(TestTargetB)
@@ -62,16 +62,20 @@ describe("consumer", () => {
         );
         expectedJob.consumer.instance = new WeakRef(instance);
 
+        // TODO: fix this test.
+        // I was adding the transformer feature to triggers
         expectedJob.addTriggers(
             {
                 target: TestTargetC,
                 onRemove: true,
+                transformer: expect.any(Function),
             },
             {
                 target: TestTargetB,
                 onCreate: true,
                 onUpdate: true,
                 onRemove: true,
+                transformer: expect.any(Function),
             },
             {
                 target: TestTargetA,
@@ -92,6 +96,7 @@ describe("consumer", () => {
                 target: TestTargetB,
                 creates: true,
                 updates: true,
+                removes: true,
             },
             {
                 removes: true,

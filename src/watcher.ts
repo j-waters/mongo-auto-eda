@@ -88,11 +88,13 @@ export class Watcher {
         const jobs = this.registry.getTriggeredJobs(changeInfo);
 
         return Promise.all(
-            jobs.map(({ name }) => {
-                console.log(
-                    `Creating new job instance ${name} for ${entityId}`,
+            jobs.map(async (job) => {
+                const entityIds = await job.applyTriggerTransformer(
+                    target,
+                    entityId,
+                    event,
                 );
-                return this.manager.queue(name, entityId);
+                return this.manager.queue(job.name, entityIds);
             }),
         );
     }

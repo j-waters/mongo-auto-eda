@@ -83,7 +83,7 @@ describe("worker", () => {
 
             let consumerInstance: TestConsumer;
 
-            @Consumer<TestConsumer, TestTargetA>({ target: () => TestTargetA })
+            @Consumer({ target: () => TestTargetA })
             class TestConsumer {
                 private prop = "foo";
 
@@ -427,5 +427,53 @@ describe("worker works with watcher", () => {
             watcher.start();
 
             manager.queue("initialJob", new ObjectId());
+        }));
+
+    it("uses transformers correctly", () =>
+        // eslint-disable-next-line no-async-promise-executor
+        new Promise<void>(async (resolve) => {
+            let targetAEntity: TestTargetA;
+            const targetBId = new ObjectId();
+
+            // This could be a transaction being created
+            addJob(
+                "job1",
+                async () => {
+                    targetAEntity = await TestModel.create({
+                        name: "new",
+                    });
+                },
+                {
+                    target: () => TestTargetA,
+                    expectedChanges: [{ creates: true }],
+                },
+            );
+
+            // This could be an account balance being updated
+            addJob(
+                "job2",
+                async (entityId) => {
+                    expect(entityId).toEqual(targetBId);
+                    resolve();
+                },
+                {
+                    target: () => TestTargetB,
+                    triggers: [
+                        {
+                            target: TestTargetA,
+                            onCreate: true,
+                            transformer(entityId) {
+                                expect(entityId).toEqual(targetAEntity._id);
+                                return targetBId;
+                            },
+                        },
+                    ],
+                },
+            );
+
+            worker.start();
+            watcher.start();
+
+            manager.queue("job1", new ObjectId());
         }));
 });

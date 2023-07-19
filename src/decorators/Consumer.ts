@@ -6,12 +6,20 @@ export interface ConsumerOptions<T extends Targetable> {
     target: Target<T>;
 }
 
-export function Consumer<ConsumerClass extends object, T extends Targetable>(
-    options: ConsumerOptions<T>,
-) {
-    return function (cls: Class<ConsumerClass>): Class<ConsumerClass> {
-        console.log("REGISTER CONSUMER");
-        const consumer = registry.addConsumer(cls, options);
+export function Consumer<T extends Targetable>(
+    optionsOrTarget: ConsumerOptions<T> | Target<T>,
+): ClassDecorator {
+    let options: ConsumerOptions<T>;
+    if (typeof optionsOrTarget === "object") {
+        options = optionsOrTarget;
+    } else {
+        options = {
+            target: optionsOrTarget,
+        };
+    }
+
+    return function<TClass extends object>(cls: TClass) {
+        const consumer = registry.addConsumer(cls as Class<object>, options);
         Reflect.defineMetadata("target", options.target, cls);
         return class extends (cls as Class) {
             constructor(...args: any[]) {
@@ -22,6 +30,6 @@ export function Consumer<ConsumerClass extends object, T extends Targetable>(
                     consumer.instance = new WeakRef(this);
                 }
             }
-        } as Class<ConsumerClass>;
+        } as TClass;
     };
 }

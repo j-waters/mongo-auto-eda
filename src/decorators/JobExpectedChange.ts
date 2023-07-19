@@ -37,6 +37,7 @@ export function JobExpectedChange<T extends Targetable>(
                 options = {
                     creates: true,
                     updates: true,
+                    removes: true,
                 };
             }
         } else if (Array.isArray(targetOrOptionsOrProps)) {

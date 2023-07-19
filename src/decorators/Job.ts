@@ -5,7 +5,6 @@ import type { BaseJobOptions, ChangeInfo, Trigger } from "../job";
 export interface JobDecoratorOptions extends BaseJobOptions {}
 
 export function Job(decoratorOptions?: JobDecoratorOptions): MethodDecorator {
-    console.log("register job");
     return function (
         target: any,
         propertyKey: string | symbol,

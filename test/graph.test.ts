@@ -29,19 +29,27 @@ const emptyExpectation = {
 
 describe("job", () => {
     it("can return a map of triggers", () => {
-        const job = new RegisteredJob<TestTargetA>(() => {}, {
-            target: TestTargetA,
-        });
+        const job = new RegisteredJob<TestTargetA>(
+            () => {},
+            {
+                target: TestTargetA,
+            },
+            "job",
+        );
 
         job.addTriggers(
             { onUpdate: ["own1"] },
             { onUpdate: ["own2"] },
             { target: () => TestTargetA, onUpdate: ["own3"] },
             { target: TestTargetA, onUpdate: ["own4"] },
-            { target: TestTargetB, onUpdate: ["other1", "other2"] },
-            { target: TestTargetC, onUpdate: true },
-            { target: TestTargetC, onUpdate: ["nope"] },
-            { target: TestTargetC, onRemove: true },
+            {
+                target: TestTargetB,
+                onUpdate: ["other1", "other2"],
+                transformer() {},
+            },
+            { target: TestTargetC, onUpdate: true, transformer() {} },
+            { target: TestTargetC, onUpdate: ["nope"], transformer() {} },
+            { target: TestTargetC, onRemove: true, transformer() {} },
         );
 
         const expectedMap = new Map();
@@ -52,20 +60,26 @@ describe("job", () => {
         expectedMap.set(TestTargetB, {
             target: expect.anything(),
             onUpdate: ["other1", "other2"],
+            transformer: expect.anything(),
         });
         expectedMap.set(TestTargetC, {
             target: expect.anything(),
             onUpdate: true,
             onRemove: true,
+            transformer: expect.anything(),
         });
 
         expect(job.triggerMap).toEqual(expectedMap);
     });
 
     it("can return a map of changes", () => {
-        const job = new RegisteredJob<TestTargetA>(() => {}, {
-            target: TestTargetA,
-        });
+        const job = new RegisteredJob<TestTargetA>(
+            () => {},
+            {
+                target: TestTargetA,
+            },
+            "job",
+        );
 
         job.addExpectedChange(
             { updates: ["own1"] },

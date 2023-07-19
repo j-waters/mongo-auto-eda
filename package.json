@@ -1,5 +1,5 @@
 {
-  "name": "mongo-job-queue",
+  "name": "mongo-auto-eda",
   "type": "module",
   "version": "0.0.0",
   "sideEffects": false,

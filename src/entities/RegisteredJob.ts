@@ -1,4 +1,5 @@
-import type { Class, JobFunction, Targetable } from "../common";
+import type { ChangeStreamDocument, ObjectId } from "mongodb";
+import type { Class, JobFunction, Target, Targetable } from "../common";
 import { CurrentJobTargetPlaceholder, resolveTarget } from "../common";
 import type {
     ChangeInfo,
@@ -17,11 +18,15 @@ export class RegisteredJob<T extends Targetable = Targetable> {
     consumer?: RegisteredConsumer<T>;
 
     constructor(
-        public func: JobFunction,
+        public _func: JobFunction,
         private options: JobOptions<T>,
         private nameOrProp?: string,
         public consumerClass?: Class,
-    ) {}
+    ) {
+        if (!this.name) {
+            throw new Error("New job has no name");
+        }
+    }
 
     registerConsumer(consumer: RegisteredConsumer<T>) {
         this.consumer = consumer;
@@ -43,6 +48,25 @@ export class RegisteredJob<T extends Targetable = Targetable> {
                 this.willChangeMap.set(value.target, value);
             }
         }
+    }
+
+    get func() {
+        return this.bind(this._func);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    private bind<F extends Function>(func: F): F {
+        if (this.consumer && this.consumer.instance) {
+            const instance = this.consumer.instance.deref();
+            if (instance) {
+                func = func.bind(instance);
+            } else {
+                console.warn(
+                    `${this.consumer.name} instance once existed but has been garbage collected`,
+                );
+            }
+        }
+        return func;
     }
 
     get name() {
@@ -70,12 +94,57 @@ export class RegisteredJob<T extends Targetable = Targetable> {
         return this.options.batch;
     }
 
+    async applyTriggerTransformer(
+        target: Target,
+        entityId: ObjectId,
+        event: ChangeStreamDocument,
+    ): Promise<ObjectId[]> {
+        const resolvedTarget = resolveTarget(target);
+
+        const trigger = this.triggerMap.get(resolvedTarget);
+        if (!trigger) {
+            throw new Error(`Missing trigger for target ${resolvedTarget}`);
+        }
+
+        if (!("transformer" in trigger && trigger.transformer)) {
+            if (resolvedTarget === this.target) {
+                return [entityId];
+            }
+
+            throw new Error(`Trigger for missing transformer`);
+        }
+
+        const res = this.bind(trigger.transformer)(entityId, event);
+        if (!res) {
+            return [];
+        } else if (Array.isArray(res)) {
+            return res;
+        } else {
+            return [res];
+        }
+    }
+
     addTriggers(...triggers: TriggerOptions[]) {
         for (const trigger of triggers) {
             const target =
                 resolveTarget(trigger.target) ??
                 this.target ??
                 CurrentJobTargetPlaceholder;
+
+            if (
+                target !== this.target &&
+                target !== CurrentJobTargetPlaceholder &&
+                !trigger.transformer &&
+                !this.batch
+            ) {
+                throw new Error(
+                    `Registering trigger ${JSON.stringify(trigger)} for job ${
+                        this.name
+                    }, and the targets don't align (${trigger.target} vs ${
+                        this.target
+                    }). Add a transformer to the trigger`,
+                );
+            }
 
             const existing = this.triggerMap.get(target);
             if (!existing) {
