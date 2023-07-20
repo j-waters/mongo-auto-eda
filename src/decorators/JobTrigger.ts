@@ -6,7 +6,7 @@ import type {
     TriggerOptions,
 } from "../job";
 
-export function JobTrigger<T extends Targetable>(): MethodDecorator;
+export function JobTrigger<_T extends Targetable>(): MethodDecorator;
 export function JobTrigger<T extends Targetable>(
     props: TargetProps<T>,
 ): MethodDecorator;
@@ -15,20 +15,20 @@ export function JobTrigger<T extends Targetable>(
 ): MethodDecorator;
 export function JobTrigger<T extends Targetable>(
     target: Target<T>,
-    options: TriggerOptions<T> | TransformerFunc,
+    options: TriggerOptions<T> | TransformerFunc<T>,
 ): MethodDecorator;
 export function JobTrigger<T extends Targetable>(
     target: Target<T>,
     props: TargetProps<T>,
-    transformer: TransformerFunc,
+    transformer: TransformerFunc<T>,
 ): MethodDecorator;
 export function JobTrigger<T extends Targetable>(
     targetOrOptionsOrProps?: Target<T> | TriggerOptions<T> | TargetProps<T>,
     optionsOrPropsOrTransformer?:
         | TriggerOptions<T>
         | TargetProps<T>
-        | TransformerFunc,
-    transformer?: TransformerFunc,
+        | TransformerFunc<T>,
+    transformer?: TransformerFunc<T>,
 ): MethodDecorator {
     return function (
         cls: any,

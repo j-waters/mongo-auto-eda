@@ -1,5 +1,4 @@
-import type { ChangeStreamDocument, ObjectId } from "mongodb";
-import type { Class, JobFunction, Target, Targetable } from "../common";
+import type { Class, JobFunction, Targetable } from "../common";
 import { CurrentJobTargetPlaceholder, resolveTarget } from "../common";
 import type {
     ChangeInfo,
@@ -55,7 +54,7 @@ export class RegisteredJob<T extends Targetable = Targetable> {
     }
 
     // eslint-disable-next-line @typescript-eslint/ban-types
-    private bind<F extends Function>(func: F): F {
+    bind<F extends Function>(func: F): F {
         if (this.consumer && this.consumer.instance) {
             const instance = this.consumer.instance.deref();
             if (instance) {
@@ -92,36 +91,6 @@ export class RegisteredJob<T extends Targetable = Targetable> {
 
     get batch() {
         return this.options.batch;
-    }
-
-    async applyTriggerTransformer(
-        target: Target,
-        entityId: ObjectId,
-        event: ChangeStreamDocument,
-    ): Promise<ObjectId[]> {
-        const resolvedTarget = resolveTarget(target);
-
-        const trigger = this.triggerMap.get(resolvedTarget);
-        if (!trigger) {
-            throw new Error(`Missing trigger for target ${resolvedTarget}`);
-        }
-
-        if (!("transformer" in trigger && trigger.transformer)) {
-            if (resolvedTarget === this.target) {
-                return [entityId];
-            }
-
-            throw new Error(`Trigger for missing transformer`);
-        }
-
-        const res = this.bind(trigger.transformer)(entityId, event);
-        if (!res) {
-            return [];
-        } else if (Array.isArray(res)) {
-            return res;
-        } else {
-            return [res];
-        }
     }
 
     addTriggers(...triggers: TriggerOptions[]) {

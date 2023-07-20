@@ -1,6 +1,8 @@
 import type { ChangeStreamDocument, ObjectId } from "mongodb";
+import type { DocumentType } from "@typegoose/typegoose";
+import type { Document } from "mongoose";
 import { registry } from "./registry";
-import type { JobFunction, Target, Targetable } from "./common";
+import type { Awaitable, JobFunction, Target, Targetable } from "./common";
 import type { RegisteredJob } from "./entities/RegisteredJob";
 import "reflect-metadata";
 
@@ -9,17 +11,18 @@ export type TargetProps<T extends Targetable = Targetable> = (
     | string
 )[];
 
-export type TransformerFunc = (
-    entityId?: ObjectId,
-    event?: ChangeStreamDocument,
-) => ObjectId | ObjectId[] | undefined | void;
+export type TransformerFunc<T extends Targetable> = (
+    current?: DocumentType<T>,
+    previous?: DocumentType<T>,
+    event?: ChangeStreamDocument<Document<T>>,
+) => Awaitable<ObjectId | ObjectId[] | undefined | void>;
 
 export interface TriggerOptions<T extends Targetable = Targetable> {
     onUpdate?: TargetProps<T> | boolean;
     onCreate?: boolean;
     onRemove?: boolean;
     target?: Target<T>;
-    transformer?: TransformerFunc;
+    transformer?: TransformerFunc<T>;
 }
 
 export interface Trigger<T extends Targetable = Targetable>

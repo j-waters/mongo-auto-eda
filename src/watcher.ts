@@ -3,12 +3,16 @@ import type {
     ChangeStreamDocument,
     ChangeStreamInsertDocument,
     ChangeStreamUpdateDocument,
+    ObjectId,
 } from "mongodb";
+import type { DocumentType } from "@typegoose/typegoose";
 import { getClass, mongoose } from "@typegoose/typegoose";
+import type { Document } from "mongoose";
 import { registry } from "./registry";
 import type { Class, Targetable } from "./common";
 import type { ChangeInfo } from "./job";
 import { JobManager } from "./manager";
+import type { RegisteredJob } from "./entities/RegisteredJob";
 
 // interface ChangeEvent<T> {
 //     operationType: "insert";
@@ -31,7 +35,9 @@ export class Watcher {
             throw new Error("Watcher already running");
         }
 
-        this.changeStream = mongoose.connection.watch(undefined);
+        this.changeStream = mongoose.connection.watch(undefined, {
+            fullDocumentBeforeChange: "whenAvailable",
+        });
 
         this.changeStream.on("change", (event) => {
             this.onChange(event);
@@ -54,18 +60,26 @@ export class Watcher {
         this.changeStream = undefined;
     }
 
-    private onChange(event: ChangeStreamDocument) {
+    private onChange<T extends Targetable>(
+        event: ChangeStreamDocument<Document<T>>,
+    ) {
         console.log(event);
         if (!checkEvent(event)) {
             return;
         }
 
-        const target = this.getTarget(event);
+        const model = this.getModel(event);
+        if (!model) {
+            console.warn("No model found", event);
+            return;
+        }
+
+        const target = this.getTarget(model, event);
         if (!target) {
             return;
         }
 
-        const entityId = event.documentKey._id;
+        const entityId = event.documentKey._id as ObjectId;
 
         const changeInfo: ChangeInfo<Targetable> = {
             target,
@@ -83,14 +97,14 @@ export class Watcher {
                 changeInfo.removes = true;
         }
 
-        console.log("change info", changeInfo);
-
         const jobs = this.registry.getTriggeredJobs(changeInfo);
 
         return Promise.all(
             jobs.map(async (job) => {
-                const entityIds = await job.applyTriggerTransformer(
+                const entityIds = await this.applyTriggerTransformer(
+                    job,
                     target,
+                    model,
                     entityId,
                     event,
                 );
@@ -99,9 +113,64 @@ export class Watcher {
         );
     }
 
-    private getModel(
+    private async applyTriggerTransformer<T extends Targetable>(
+        job: RegisteredJob,
+        resolvedTarget: Class<T>,
+        model: mongoose.Model<T>,
+        entityId: ObjectId,
+        event: ChangeStreamDocument<Document<T>>,
+    ): Promise<ObjectId[]> {
+        const trigger = job.triggerMap.get(resolvedTarget);
+        if (!trigger) {
+            throw new Error(`Missing trigger for target ${resolvedTarget}`);
+        }
+
+        if (!("transformer" in trigger && trigger.transformer)) {
+            if (resolvedTarget === job.target) {
+                return [entityId];
+            }
+
+            throw new Error(`Trigger for missing transformer`);
+        }
+
+        let currentEntity: DocumentType<any> | undefined;
+        let prevEntity: DocumentType<any> | undefined;
+        if ("fullDocument" in event) {
+            currentEntity = event.fullDocument;
+        }
+        if ("fullDocumentBeforeChange" in event) {
+            prevEntity = event.fullDocumentBeforeChange;
+        }
+
+        if (currentEntity) {
+            currentEntity = model.hydrate(currentEntity);
+        }
+        if (prevEntity) {
+            prevEntity = model.hydrate(prevEntity);
+        }
+
+        if (!currentEntity && event.operationType !== "delete") {
+            currentEntity = await model.findById(entityId);
+            console.log("find by id", entityId, currentEntity);
+        }
+
+        const res = await job.bind(trigger.transformer)(
+            currentEntity,
+            prevEntity,
+            event,
+        );
+        if (!res) {
+            return [];
+        } else if (Array.isArray(res)) {
+            return res;
+        } else {
+            return [res];
+        }
+    }
+
+    private getModel<T extends Targetable>(
         event: ChangeStreamDocument,
-    ): mongoose.Model<unknown> | undefined {
+    ): mongoose.Model<T> | undefined {
         if (!checkEvent(event)) {
             return;
         }
@@ -111,26 +180,17 @@ export class Watcher {
         );
     }
 
-    private getTarget(
+    private getTarget<T extends Targetable>(
+        model: mongoose.Model<T>,
         event: ChangeStreamDocument,
-    ): Class<Targetable> | undefined {
-        if (!checkEvent(event)) {
-            return;
-        }
-
-        const model = this.getModel(event);
-        if (!model) {
-            console.warn("No model found", event);
-            return;
-        }
-
+    ): Class<T> | undefined {
         const target = getClass(model.modelName);
         if (!target) {
             console.warn("No target found", event, model);
             return;
         }
 
-        return target as Class<Targetable>;
+        return target as Class<T>;
     }
 }
 

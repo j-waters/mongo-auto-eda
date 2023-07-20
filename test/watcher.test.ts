@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
+import type { DocumentType } from "@typegoose/typegoose";
 import { getModelForClass, mongoose, prop } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
 import { Watcher, generateModifiedFields } from "../src/watcher";
+import type { JobInstance, JobState } from "../src/entities/JobInstance";
 import { JobInstanceModel } from "../src/entities/JobInstance";
-import { addJob } from "../src";
+import { Consumer, Job, JobTrigger, addJob } from "../src";
 
 class SubDocument {
     @prop({ type: () => Number })
@@ -26,6 +28,10 @@ class TestTarget {
 
 const TestModel = getModelForClass(TestTarget);
 
+class TestTargetB {
+    _id!: ObjectId;
+}
+
 beforeEach(async () => {
     const replSet = new MongoMemoryReplSet({
         replSet: { count: 1 },
@@ -44,8 +50,8 @@ beforeEach(async () => {
     };
 });
 
-function sleep() {
-    return new Promise<void>((resolve) => setTimeout(resolve, 250));
+function sleep(t = 250) {
+    return new Promise<void>((resolve) => setTimeout(resolve, t));
 }
 
 const expectedJobCommon = {
@@ -54,7 +60,7 @@ const expectedJobCommon = {
     checkReadyAttempts: 0,
     createdAt: expect.any(Date),
     updatedAt: expect.any(Date),
-    state: "ready",
+    state: "ready" as JobState,
 };
 
 describe("watcher", () => {
@@ -242,6 +248,166 @@ describe("watcher", () => {
             break;
         }
     });
+
+    it("runs transformers on create", async () => {
+        let entityPromise: Promise<DocumentType<TestTarget>>;
+        const targetBIds = [new ObjectId(), new ObjectId()];
+
+        addJob("job", () => {}, {
+            target: () => TestTargetB,
+            triggers: [
+                {
+                    target: TestTarget,
+                    onCreate: true,
+                    async transformer(gotEntity) {
+                        const entity = await entityPromise;
+                        expect(gotEntity!.toObject()).toEqual(
+                            entity.toObject(),
+                        );
+                        expect(this).toBeUndefined();
+                        return targetBIds;
+                    },
+                },
+            ],
+        });
+
+        watcher.start();
+
+        entityPromise = TestModel.create({ name: "test" });
+
+        await waitForExpectedJobs(
+            targetBIds.map((id) => ({
+                jobName: "job",
+                entityId: id,
+                ...expectedJobCommon,
+            })),
+        );
+    });
+
+    it("runs transformers on update", async () => {
+        let entity: DocumentType<TestTarget>;
+        const targetBId = new ObjectId();
+
+        addJob("job", () => {}, {
+            target: () => TestTargetB,
+            triggers: [
+                {
+                    target: TestTarget,
+                    onUpdate: true,
+                    async transformer(curEntity, prevEntity) {
+                        expect(curEntity!.toObject()).toEqual({
+                            ...entity.toObject(),
+                            name: "changed",
+                        });
+                        expect(prevEntity).toBeUndefined();
+                        expect(this).toBeUndefined();
+                        return targetBId;
+                    },
+                },
+            ],
+        });
+
+        entity = await TestModel.create({ name: "test" });
+
+        watcher.start();
+
+        await entity.updateOne({ name: "changed" }).exec();
+
+        await waitForExpectedJobs([
+            {
+                jobName: "job",
+                entityId: targetBId,
+                ...expectedJobCommon,
+            },
+        ]);
+    });
+
+    it("runs transformers on delete", async () => {
+        let entity: DocumentType<TestTarget>;
+
+        addJob("job", () => {}, {
+            target: () => TestTargetB,
+            triggers: [
+                {
+                    target: TestTarget,
+                    onUpdate: true,
+                    async transformer(curEntity, prevEntity) {
+                        expect(curEntity).toBeUndefined();
+                        expect(prevEntity!.toObject()).toEqual({
+                            ...entity.toObject(),
+                            name: "changed",
+                        });
+                        expect(this).toBeUndefined();
+                    },
+                },
+            ],
+        });
+
+        entity = await TestModel.create({ name: "test" });
+
+        watcher.start();
+
+        await TestModel.deleteMany();
+
+        await sleep(1000);
+
+        await waitForExpectedJobs([]);
+    });
+
+    it("runs transformers in the consumer's context", async () => {
+        let entityPromise: Promise<DocumentType<TestTarget>>;
+        const targetBIds = [new ObjectId(), new ObjectId()];
+
+        let consumerInstance: TestConsumer;
+        @Consumer(TestTargetB)
+        class TestConsumer {
+            @Job()
+            @JobTrigger(
+                TestTarget,
+                async function (this: TestConsumer, gotEntity) {
+                    const entity = await entityPromise;
+                    expect(gotEntity!.toObject()).toEqual(entity.toObject());
+                    expect(this).toBe(consumerInstance);
+                    return targetBIds;
+                },
+            )
+            testJob() {}
+        }
+
+        consumerInstance = new TestConsumer();
+
+        watcher.start();
+
+        entityPromise = TestModel.create({ name: "test" });
+
+        while (true) {
+            const jobs = await JobInstanceModel.find().lean().exec();
+            if (jobs.length !== targetBIds.length) {
+                continue;
+            }
+            await sleep();
+
+            expect(jobs).toEqual(
+                targetBIds.map((id) => ({
+                    jobName: "TestConsumer<TestTargetB>.testJob",
+                    entityId: id,
+                    ...expectedJobCommon,
+                })),
+            );
+            break;
+        }
+    });
 });
 
-// TODO: add transformer tests
+async function waitForExpectedJobs(expectedJobs: JobInstance[]) {
+    while (true) {
+        const jobs = await JobInstanceModel.find().lean().exec();
+        if (jobs.length !== expectedJobs.length) {
+            continue;
+        }
+        await sleep();
+
+        expect(jobs).toEqual(expect.arrayContaining(expectedJobs));
+        return;
+    }
+}
