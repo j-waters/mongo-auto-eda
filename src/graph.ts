@@ -79,4 +79,28 @@ export class JobGraph {
     get(job: RegisteredJob) {
         return this.jobNodes.get(job.name);
     }
+
+    toDot() {
+        let out = "digraph {\n";
+
+        for (const job of this.jobNodes.values()) {
+            for (const willTriggerSpecific of job.willTriggerSpecific) {
+                out += `  "${job.job.name}" -> "${willTriggerSpecific}" [label=specific]\n`;
+            }
+            for (const willTriggerAny of job.willTriggerAny) {
+                out += `  edge [style=dashed]\n  "${job.job.name}" -> "${willTriggerAny}" [label=any]\n`;
+            }
+
+            if (
+                job.willTriggerSpecific.length + job.willTriggerAny.length ===
+                0
+            ) {
+                out += `  "${job.job.name}"\n`;
+            }
+        }
+
+        out += `}`;
+
+        return out;
+    }
 }

@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ObjectId } from "mongodb";
 import type { UpdateQuery } from "mongoose";
 import type { JobInstance, JobState } from "./entities/JobInstance";
-import { JobInstanceModel } from "./entities/JobInstance";
+import { JobInstanceModel } from "./entities";
 import type { RegisteredJob } from "./entities/RegisteredJob";
 import { registry } from "./registry";
 
@@ -19,6 +19,9 @@ export class Worker {
 
     start() {
         this.stopped = false;
+        console.info(
+            `Starting worker with ${registry.jobs.length} jobs registered`,
+        );
         return this.processLoop();
     }
 

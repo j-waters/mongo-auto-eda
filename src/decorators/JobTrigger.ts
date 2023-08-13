@@ -20,7 +20,7 @@ export function JobTrigger<T extends Targetable>(
 export function JobTrigger<T extends Targetable>(
     target: Target<T>,
     props: TargetProps<T>,
-    transformer: TransformerFunc<T>,
+    transformer?: TransformerFunc<T>,
 ): MethodDecorator;
 export function JobTrigger<T extends Targetable>(
     targetOrOptionsOrProps?: Target<T> | TriggerOptions<T> | TargetProps<T>,

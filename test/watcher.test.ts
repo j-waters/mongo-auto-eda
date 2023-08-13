@@ -4,8 +4,8 @@ import type { DocumentType } from "@typegoose/typegoose";
 import { getModelForClass, mongoose, prop } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
 import { Watcher, generateModifiedFields } from "../src/watcher";
-import type { JobInstance, JobState } from "../src/entities/JobInstance";
-import { JobInstanceModel } from "../src/entities/JobInstance";
+import type { JobInstance, JobState } from "../src/entities";
+import { JobInitiatorModel, JobInstanceModel } from "../src/entities";
 import { Consumer, Job, JobTrigger, addJob } from "../src";
 
 class SubDocument {
@@ -63,6 +63,13 @@ const expectedJobCommon = {
     state: "ready" as JobState,
 };
 
+const expectedInitiatorCommon = {
+    _id: expect.any(ObjectId),
+    __v: expect.any(Number),
+    createdAt: expect.any(Date),
+    updatedAt: expect.any(Date),
+};
+
 describe("watcher", () => {
     const watcher = new Watcher();
 
@@ -95,10 +102,23 @@ describe("watcher", () => {
             }
             await sleep();
 
+            const initiators = await JobInitiatorModel.find().lean().exec();
+            expect(initiators).toEqual([
+                {
+                    ...expectedInitiatorCommon,
+                    created: true,
+                    deleted: false,
+                    updated: [],
+                    name: "<TestTarget>(created: true)",
+                    target: "TestTarget",
+                },
+            ]);
+
             expect(jobs).toEqual([
                 {
                     jobName: "testJob",
                     entityId: entity._id,
+                    initiator: initiators[0]._id,
                     ...expectedJobCommon,
                 },
             ]);
@@ -154,15 +174,37 @@ describe("watcher", () => {
             }
             await sleep();
 
+            const initiators = await JobInitiatorModel.find().lean().exec();
+            expect(initiators).toEqual([
+                {
+                    ...expectedInitiatorCommon,
+                    created: false,
+                    deleted: false,
+                    updated: ["name"],
+                    name: "<TestTarget>(updated: [name])",
+                    target: "TestTarget",
+                },
+                {
+                    ...expectedInitiatorCommon,
+                    created: false,
+                    deleted: false,
+                    updated: ["name"],
+                    name: "<TestTarget>(updated: [name])",
+                    target: "TestTarget",
+                },
+            ]);
+
             expect(jobs).toEqual([
                 {
                     jobName: "onUpdateAny",
                     entityId: entity._id,
+                    initiator: initiators[0]._id,
                     ...expectedJobCommon,
                 },
                 {
                     jobName: "onUpdatePath",
                     entityId: entity._id,
+                    initiator: initiators[0]._id,
                     ...expectedJobCommon,
                 },
             ]);
@@ -202,10 +244,23 @@ describe("watcher", () => {
             }
             await sleep();
 
+            const initiators = await JobInitiatorModel.find().lean().exec();
+            expect(initiators).toEqual([
+                {
+                    ...expectedInitiatorCommon,
+                    created: false,
+                    deleted: false,
+                    updated: ["subDoc.prop", "subDoc"],
+                    name: "<TestTarget>(updated: [subDoc.prop, subDoc])",
+                    target: "TestTarget",
+                },
+            ]);
+
             expect(jobs).toEqual([
                 {
                     jobName: "onUpdatePath",
                     entityId: entity._id,
+                    initiator: initiators[0]._id,
                     ...expectedJobCommon,
                 },
             ]);
@@ -238,10 +293,23 @@ describe("watcher", () => {
             }
             await sleep();
 
+            const initiators = await JobInitiatorModel.find().lean().exec();
+            expect(initiators).toEqual([
+                {
+                    ...expectedInitiatorCommon,
+                    created: false,
+                    deleted: true,
+                    updated: [],
+                    name: "<TestTarget>(deleted: true)",
+                    target: "TestTarget",
+                },
+            ]);
+
             expect(jobs).toEqual([
                 {
                     jobName: "batchRemove",
                     isBatch: true,
+                    initiator: initiators[0]._id,
                     ...expectedJobCommon,
                 },
             ]);
@@ -279,6 +347,7 @@ describe("watcher", () => {
             targetBIds.map((id) => ({
                 jobName: "job",
                 entityId: id,
+                initiator: expect.any(ObjectId),
                 ...expectedJobCommon,
             })),
         );
@@ -294,12 +363,16 @@ describe("watcher", () => {
                 {
                     target: TestTarget,
                     onUpdate: true,
-                    async transformer(curEntity, prevEntity) {
+                    async transformer(curEntity, event) {
                         expect(curEntity!.toObject()).toEqual({
                             ...entity.toObject(),
                             name: "changed",
                         });
-                        expect(prevEntity).toBeUndefined();
+                        expect(event).toEqual({
+                            changeStreamEvent: expect.anything(),
+                            type: "update",
+                            modifiedFields: ["name"],
+                        });
                         expect(this).toBeUndefined();
                         return targetBId;
                     },
@@ -317,25 +390,25 @@ describe("watcher", () => {
             {
                 jobName: "job",
                 entityId: targetBId,
+                initiator: expect.any(ObjectId),
                 ...expectedJobCommon,
             },
         ]);
     });
 
     it("runs transformers on delete", async () => {
-        let entity: DocumentType<TestTarget>;
-
         addJob("job", () => {}, {
             target: () => TestTargetB,
             triggers: [
                 {
                     target: TestTarget,
-                    onUpdate: true,
-                    async transformer(curEntity, prevEntity) {
+                    onRemove: true,
+                    async transformer(curEntity, event) {
                         expect(curEntity).toBeUndefined();
-                        expect(prevEntity!.toObject()).toEqual({
-                            ...entity.toObject(),
-                            name: "changed",
+                        expect(event).toEqual({
+                            changeStreamEvent: expect.anything(),
+                            type: "delete",
+                            modifiedFields: [],
                         });
                         expect(this).toBeUndefined();
                     },
@@ -343,7 +416,7 @@ describe("watcher", () => {
             ],
         });
 
-        entity = await TestModel.create({ name: "test" });
+        await TestModel.create({ name: "test" });
 
         watcher.start();
 
@@ -391,6 +464,7 @@ describe("watcher", () => {
                 targetBIds.map((id) => ({
                     jobName: "TestConsumer<TestTargetB>.testJob",
                     entityId: id,
+                    initiator: expect.any(ObjectId),
                     ...expectedJobCommon,
                 })),
             );
@@ -399,7 +473,7 @@ describe("watcher", () => {
     });
 });
 
-async function waitForExpectedJobs(expectedJobs: JobInstance[]) {
+async function waitForExpectedJobs(expectedJobs: Omit<JobInstance, "id">[]) {
     while (true) {
         const jobs = await JobInstanceModel.find().lean().exec();
         if (jobs.length !== expectedJobs.length) {

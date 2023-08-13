@@ -1,9 +1,14 @@
-import type { Class, Targetable } from "./common";
+import type { Class, JobFunction, Targetable } from "./common";
 import { RegisteredConsumer } from "./entities/RegisteredConsumer";
 import { RegisteredJob } from "./entities/RegisteredJob";
 import type { ConsumerOptions } from "./decorators/Consumer";
 import type { ChangeInfo, JobOptions } from "./job";
 import { JobGraph } from "./graph";
+import type {
+    HandlerFunction,
+    ReprocessOptions,
+} from "./entities/RegisteredReprocessHandler";
+import { RegisteredReprocessHandler } from "./entities/RegisteredReprocessHandler";
 
 // interface RegisteredJob {
 //     name: string;
@@ -23,18 +28,19 @@ import { JobGraph } from "./graph";
 export class Registry {
     consumers: RegisteredConsumer[] = [];
     jobs: RegisteredJob[] = [];
+    reprocessHandlers: RegisteredReprocessHandler[] = [];
 
     addConsumer<T extends Targetable>(cls: Class, options: ConsumerOptions<T>) {
         const consumer = new RegisteredConsumer(cls, options);
         this.consumers.push(consumer);
-        this.jobs
+        [...this.jobs, ...this.reprocessHandlers]
             .filter((j) => j.consumerClass === consumer.cls)
             .forEach((j) => j.registerConsumer(consumer));
         return consumer;
     }
 
     addJob(
-        func: (...args: any[]) => any,
+        func: JobFunction,
         options: JobOptions<any>,
         nameOrProp?: string,
         parentClass?: Class,
@@ -49,6 +55,20 @@ export class Registry {
 
         this.jobs.push(job);
         return job;
+    }
+
+    addReprocessHandler(
+        func: HandlerFunction,
+        options?: ReprocessOptions,
+        parentClass?: Class,
+    ) {
+        const handler = new RegisteredReprocessHandler(
+            func,
+            options,
+            parentClass,
+        );
+        this.reprocessHandlers.push(handler);
+        return handler;
     }
 
     getJobByName(name: string): RegisteredJob | undefined {

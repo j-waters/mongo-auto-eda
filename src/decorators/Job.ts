@@ -2,9 +2,12 @@ import type { Targetable } from "../common";
 import { registry } from "../registry";
 import type { BaseJobOptions, ChangeInfo, Trigger } from "../job";
 
-export interface JobDecoratorOptions extends BaseJobOptions {}
+export interface JobDecoratorOptions<T extends Targetable>
+    extends BaseJobOptions<T> {}
 
-export function Job(decoratorOptions?: JobDecoratorOptions): MethodDecorator {
+export function Job<T extends Targetable = Targetable>(
+    decoratorOptions?: JobDecoratorOptions<T>,
+): MethodDecorator {
     return function (
         target: any,
         propertyKey: string | symbol,

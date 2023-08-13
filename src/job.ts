@@ -1,21 +1,26 @@
-import type { ChangeStreamDocument, ObjectId } from "mongodb";
+import type { ChangeStreamDocument } from "mongodb";
 import type { DocumentType } from "@typegoose/typegoose";
 import type { Document } from "mongoose";
 import { registry } from "./registry";
 import type { Awaitable, JobFunction, Target, Targetable } from "./common";
 import type { RegisteredJob } from "./entities/RegisteredJob";
-import "reflect-metadata";
+import type { HasId } from "./util";
 
 export type TargetProps<T extends Targetable = Targetable> = (
     | keyof T
     | string
 )[];
 
+export interface ChangeEvent<T extends Targetable> {
+    changeStreamEvent: ChangeStreamDocument<Document<T>>;
+    type: ChangeStreamDocument<Document<T>>["operationType"];
+    modifiedFields: (keyof T | string)[];
+}
+
 export type TransformerFunc<T extends Targetable> = (
-    current?: DocumentType<T>,
-    previous?: DocumentType<T>,
-    event?: ChangeStreamDocument<Document<T>>,
-) => Awaitable<ObjectId | ObjectId[] | undefined | void>;
+    entity: DocumentType<T>,
+    event: ChangeEvent<T>,
+) => Awaitable<HasId | HasId[] | undefined | void>;
 
 export interface TriggerOptions<T extends Targetable = Targetable> {
     onUpdate?: TargetProps<T> | boolean;
@@ -42,13 +47,12 @@ export interface ChangeInfo<T extends Targetable = Targetable>
     target: Target<T>;
 }
 
-export interface BaseJobOptions {
+export interface BaseJobOptions<T extends Targetable> {
     batch?: boolean;
-}
-
-export interface JobOptions<T extends Targetable> extends BaseJobOptions {
     target?: Target<T>;
 }
+
+export interface JobOptions<T extends Targetable> extends BaseJobOptions<T> {}
 
 export interface StandaloneJobOptions<T extends Targetable>
     extends JobOptions<T> {

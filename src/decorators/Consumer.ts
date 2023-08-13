@@ -1,6 +1,5 @@
 import type { Class, Target, Targetable } from "../common";
 import { registry } from "../registry";
-import "reflect-metadata";
 
 export interface ConsumerOptions<T extends Targetable> {
     target: Target<T>;

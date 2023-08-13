@@ -12,7 +12,13 @@ import { registry } from "./registry";
 import type { Class, Targetable } from "./common";
 import type { ChangeInfo } from "./job";
 import { JobManager } from "./manager";
-import type { RegisteredJob } from "./entities/RegisteredJob";
+import type { RegisteredJob } from "./entities";
+import { getIds } from "./util";
+
+import { JobInitiator, JobInitiatorModel } from "./entities";
+
+// TODO: handle multiple triggers of the same type, so that
+// different transformers can be run for different updates
 
 // interface ChangeEvent<T> {
 //     operationType: "insert";
@@ -30,12 +36,23 @@ export class Watcher {
         mongoose.mongo.ChangeStreamDocument<any>
     >;
 
+    constructor(
+        private connection: mongoose.Connection = mongoose.connection,
+        private dryrun = false,
+    ) {}
+
     async start() {
         if (this.stopCallback) {
             throw new Error("Watcher already running");
         }
 
-        this.changeStream = mongoose.connection.watch(undefined, {
+        console.info(
+            `Starting watcher with ${registry.jobs.length} registered`,
+        );
+
+        console.log(registry.graph.toDot());
+
+        this.changeStream = this.connection.watch(undefined, {
             fullDocumentBeforeChange: "whenAvailable",
         });
 
@@ -60,10 +77,10 @@ export class Watcher {
         this.changeStream = undefined;
     }
 
-    private onChange<T extends Targetable>(
+    private async onChange<T extends Targetable>(
         event: ChangeStreamDocument<Document<T>>,
     ) {
-        console.log(event);
+        // console.log(event);
         if (!checkEvent(event)) {
             return;
         }
@@ -76,6 +93,7 @@ export class Watcher {
 
         const target = this.getTarget(model, event);
         if (!target) {
+            console.warn("No target found", event);
             return;
         }
 
@@ -99,6 +117,14 @@ export class Watcher {
 
         const jobs = this.registry.getTriggeredJobs(changeInfo);
 
+        if (jobs.length === 0) {
+            return [];
+        }
+
+        const initiator = await JobInitiatorModel.create(
+            new JobInitiator({ change: changeInfo }),
+        );
+
         return Promise.all(
             jobs.map(async (job) => {
                 const entityIds = await this.applyTriggerTransformer(
@@ -108,7 +134,15 @@ export class Watcher {
                     entityId,
                     event,
                 );
-                return this.manager.queue(job.name, entityIds);
+                if (this.dryrun) {
+                    console.info(
+                        `Would have run job ${
+                            job.name
+                        } with entity IDs ${entityIds.join(", ")}`,
+                    );
+                } else {
+                    return this.manager.queue(job.name, initiator, entityIds);
+                }
             }),
         );
     }
@@ -133,39 +167,32 @@ export class Watcher {
             throw new Error(`Trigger for missing transformer`);
         }
 
-        let currentEntity: DocumentType<any> | undefined;
-        let prevEntity: DocumentType<any> | undefined;
+        let entity: DocumentType<any> | undefined;
         if ("fullDocument" in event) {
-            currentEntity = event.fullDocument;
-        }
-        if ("fullDocumentBeforeChange" in event) {
-            prevEntity = event.fullDocumentBeforeChange;
-        }
-
-        if (currentEntity) {
-            currentEntity = model.hydrate(currentEntity);
-        }
-        if (prevEntity) {
-            prevEntity = model.hydrate(prevEntity);
+            entity = event.fullDocument;
+        } else if ("fullDocumentBeforeChange" in event) {
+            entity = event.fullDocumentBeforeChange;
         }
 
-        if (!currentEntity && event.operationType !== "delete") {
-            currentEntity = await model.findById(entityId);
-            console.log("find by id", entityId, currentEntity);
+        if (entity) {
+            entity = model.hydrate(entity);
         }
 
-        const res = await job.bind(trigger.transformer)(
-            currentEntity,
-            prevEntity,
-            event,
-        );
-        if (!res) {
-            return [];
-        } else if (Array.isArray(res)) {
-            return res;
-        } else {
-            return [res];
+        if (!entity && event.operationType !== "delete") {
+            entity = await model.findById(entityId);
         }
+
+        const res = await job.bind(trigger.transformer)(entity, {
+            changeStreamEvent: event,
+            type: event.operationType,
+            modifiedFields:
+                event.operationType === "update"
+                    ? generateModifiedFields(
+                          event.updateDescription.updatedFields,
+                      )
+                    : [],
+        });
+        return getIds(res);
     }
 
     private getModel<T extends Targetable>(
@@ -175,7 +202,7 @@ export class Watcher {
             return;
         }
 
-        return Object.values(mongoose.models).find(
+        return Object.values(this.connection.models).find(
             (m) => m.collection.collectionName === event.ns.coll,
         );
     }

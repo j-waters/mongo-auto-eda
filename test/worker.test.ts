@@ -4,7 +4,7 @@ import { getModelForClass, mongoose, prop } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
 import { Worker, currentJobStore } from "../src/worker";
 import { Consumer, Job, JobManager, Watcher, addJob } from "../src";
-import { JobInstanceModel } from "../src/entities/JobInstance";
+import { JobInitiator, JobInstanceModel } from "../src/entities";
 
 class TestTargetA {
     _id!: ObjectId;
@@ -262,14 +262,17 @@ describe("worker", () => {
 
             await manager.queue(
                 "postBatch",
+                new JobInitiator({ name: "testInitiator" }),
                 entities.map((e) => e._id),
             );
             await manager.queue(
                 "preBatch",
+                new JobInitiator({ name: "testInitiator" }),
                 entities.map((e) => e._id),
             );
             await manager.queue(
                 "batch",
+                new JobInitiator({ name: "testInitiator" }),
                 entities.map((e) => e._id),
             );
 
@@ -426,7 +429,11 @@ describe("worker works with watcher", () => {
             worker.start();
             watcher.start();
 
-            manager.queue("initialJob", new ObjectId());
+            manager.queue(
+                "initialJob",
+                new JobInitiator({ name: "testInitiator" }),
+                new ObjectId(),
+            );
         }));
 
     it("uses transformers correctly", () =>
@@ -462,8 +469,8 @@ describe("worker works with watcher", () => {
                         {
                             target: TestTargetA,
                             onCreate: true,
-                            transformer(entityId) {
-                                expect(entityId).toEqual(targetAEntity._id);
+                            transformer(entity) {
+                                expect(entity._id).toEqual(targetAEntity._id);
                                 return targetBId;
                             },
                         },
@@ -474,6 +481,10 @@ describe("worker works with watcher", () => {
             worker.start();
             watcher.start();
 
-            manager.queue("job1", new ObjectId());
+            manager.queue(
+                "job1",
+                new JobInitiator({ name: "testInitiator" }),
+                new ObjectId(),
+            );
         }));
 });

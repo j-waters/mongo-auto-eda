@@ -212,4 +212,31 @@ describe("job", () => {
 
         expect(graph.jobNodes).toEqual(expected);
     });
+
+    it("converts to graphvis", () => {
+        /* eslint-disable @typescript-eslint/consistent-type-assertions */
+        const graphMap = new Map<string, JobNode>();
+        graphMap.set("job1", {
+            job: { name: "job1" } as RegisteredJob,
+            ...emptyExpectation,
+            willTriggerSpecific: ["job3"],
+            triggeredByAny: ["job2"],
+        });
+        graphMap.set("job2", {
+            job: { name: "job2" } as RegisteredJob,
+            ...emptyExpectation,
+            willTriggerAny: ["job1", "job3"],
+        });
+        graphMap.set("job3", {
+            job: { name: "job3" } as RegisteredJob,
+            ...emptyExpectation,
+            triggeredBySpecific: ["job1"],
+            triggeredByAny: ["job2"],
+        });
+
+        const graph = new JobGraph([]);
+        graph.jobNodes = graphMap;
+
+        graph.toDot();
+    });
 });

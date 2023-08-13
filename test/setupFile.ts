@@ -5,6 +5,7 @@ import { registry } from "../src/registry";
 afterEach(() => {
     registry.consumers = [];
     registry.jobs = [];
+    registry.reprocessHandlers = [];
 });
 
 expect.extend({
